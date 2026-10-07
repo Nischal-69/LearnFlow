@@ -98,6 +98,16 @@ export default function Dashboard({
     .sort((a, b) => b.latest.localeCompare(a.latest))
     .slice(0, 4);
 
+  // ---- 6b. Recently updated notes (pinned first, then updatedAt desc) ----
+  const folderById = new Map(state.folders.map((f) => [f.id, f]));
+  const recentNotes = [...state.notes]
+    .filter((n) => (q ? `${n.title} ${n.content} ${(n.tags ?? []).join(' ')}`.toLowerCase().includes(q) : true))
+    .sort((a, b) => {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+      return b.updatedAt.localeCompare(a.updatedAt);
+    })
+    .slice(0, 4);
+
   // ---- 7. Recent Activity (derived, today only) ----
   interface ActivityItem {
     key: string;
@@ -364,6 +374,35 @@ export default function Dashboard({
             <span className="font-bold text-ink">{streak.activeDays}</span>
           </div>
         </div>
+      </section>
+
+      {/* Recently updated notes */}
+      <section>
+        <SectionTitle title="Recently updated notes" action={<ViewAll onClick={() => go('notes')} />} />
+        {recentNotes.length === 0 ? (
+          <EmptyState title="No notes yet" hint="Write your first learning note to see it here." />
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {recentNotes.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => go('notes')}
+                className="flex items-center gap-3 rounded-xl border border-line bg-card px-4 py-3 text-left shadow-card hover:bg-surface"
+              >
+                <IconNote className="h-5 w-5 shrink-0 text-slate-400" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-ink">
+                    {n.pinned ? '★ ' : ''}{n.title}
+                  </span>
+                  <span className="block truncate text-xs text-ink-muted">
+                    {folderById.get(n.folderId)?.name ?? 'Unknown'}
+                    {(n.tags ?? []).length > 0 ? ` · #${(n.tags ?? []).slice(0, 2).join(' #')}` : ''} · Updated {formatDate(n.updatedAt)}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 6 + 7. Continue Learning + Recent Activity */}

@@ -120,15 +120,34 @@ function normalizeFolder(raw: Folder): Folder {
 
 const VALID_NOTE_KINDS: NoteKind[] = ['note', 'summary', 'resource', 'link', 'topic'];
 
+export function normalizeTags(raw: unknown): string[] {
+  const arr: unknown = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+      ? raw.split(',')
+      : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of arr as unknown[]) {
+    const v = String(t ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
 /** Fill defaults for notes saved before kinds existed. */
 function normalizeNote(raw: Note): Note {
-  const r = raw as Partial<Note>;
+  const r = raw as Partial<Note> & { tags?: unknown };
   const kind: NoteKind =
     r.kind && (VALID_NOTE_KINDS as string[]).includes(r.kind)
       ? r.kind
       : r.url && r.url.trim()
         ? 'resource'
         : 'note';
+  const roadmapId = typeof r.roadmapId === 'string' && r.roadmapId ? r.roadmapId : null;
   return {
     id: r.id ?? uid('note'),
     folderId: r.folderId ?? '',
@@ -136,6 +155,12 @@ function normalizeNote(raw: Note): Note {
     url: (r.url ?? '').trim(),
     content: r.content ?? '',
     kind,
+    tags: normalizeTags(r.tags),
+    pinned: r.pinned === true,
+    goalId: typeof r.goalId === 'string' && r.goalId ? r.goalId : null,
+    roadmapId,
+    roadmapStepId:
+      roadmapId && typeof r.roadmapStepId === 'string' && r.roadmapStepId ? r.roadmapStepId : null,
     createdAt: r.createdAt ?? new Date().toISOString(),
     updatedAt: (r as { updatedAt?: string }).updatedAt ?? r.createdAt ?? new Date().toISOString(),
   };
@@ -233,6 +258,27 @@ export interface LearningSessionInput {
   notes?: string;
   /** when a roadmap step is linked, also mark it completed */
   markStepComplete?: boolean;
+}
+
+export interface NoteExtra {
+  tags?: string[] | string;
+  pinned?: boolean;
+  goalId?: string | null;
+  roadmapId?: string | null;
+  roadmapStepId?: string | null;
+}
+
+export interface NotePatch {
+  title?: string;
+  url?: string;
+  content?: string;
+  kind?: NoteKind;
+  folderId?: string;
+  tags?: string[] | string;
+  pinned?: boolean;
+  goalId?: string | null;
+  roadmapId?: string | null;
+  roadmapStepId?: string | null;
 }
 
 function makeStep(
@@ -774,7 +820,14 @@ export function useLearnFlow() {
     });
   }
 
-  function addNote(folderId: string, title: string, url: string, content: string, kind?: NoteKind) {
+  function addNote(
+    folderId: string,
+    title: string,
+    url: string,
+    content: string,
+    kind?: NoteKind,
+    extra?: NoteExtra,
+  ) {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return '';
     const now = new Date().toISOString();
@@ -782,9 +835,11 @@ export function useLearnFlow() {
       ? folderId
       : (state.folders.find((f) => !normalizeFolder(f).parentId)?.id ?? state.folders[0]?.id ?? '');
     if (!targetId) return '';
-    const trimmedUrl = url.trim();
+    const trimmedUrl = (url ?? '').trim();
     const resolvedKind: NoteKind =
       kind ?? (trimmedUrl ? 'resource' : 'note');
+    const goalId = extra?.goalId ? extra.goalId : null;
+    const roadmapId = extra?.roadmapId ? extra.roadmapId : null;
     const id = uid('note');
     setState((s) => ({
       ...s,
@@ -794,8 +849,13 @@ export function useLearnFlow() {
           folderId: targetId,
           title: trimmedTitle,
           url: trimmedUrl,
-          content,
+          content: content ?? '',
           kind: resolvedKind,
+          tags: normalizeTags(extra?.tags ?? []),
+          pinned: extra?.pinned === true,
+          goalId,
+          roadmapId,
+          roadmapStepId: roadmapId && extra?.roadmapStepId ? extra.roadmapStepId : null,
           createdAt: now,
           updatedAt: now,
         },
@@ -806,10 +866,7 @@ export function useLearnFlow() {
     return id;
   }
 
-  function updateNote(
-    id: string,
-    patch: { title?: string; url?: string; content?: string; kind?: NoteKind; folderId?: string },
-  ) {
+  function updateNote(id: string, patch: NotePatch) {
     const now = new Date().toISOString();
     let touchedFolder = '';
     setState((s) => ({
@@ -820,18 +877,40 @@ export function useLearnFlow() {
         touchedFolder = nextFolder;
         const nextTitle = patch.title !== undefined ? patch.title.trim() || n.title : n.title;
         const nextUrl = patch.url !== undefined ? patch.url.trim() : n.url;
+        const nextRoadmapId =
+          patch.roadmapId !== undefined ? (patch.roadmapId || null) : n.roadmapId;
+        // Clear stale step link when roadmap changes/unset.
+        const nextStepId =
+          patch.roadmapStepId !== undefined
+            ? nextRoadmapId && patch.roadmapStepId
+              ? patch.roadmapStepId
+              : null
+            : patch.roadmapId !== undefined
+              ? null
+              : n.roadmapStepId;
         return {
           ...n,
           title: nextTitle,
           url: nextUrl,
           content: patch.content !== undefined ? patch.content : n.content,
           kind: patch.kind ?? (patch.url !== undefined ? (nextUrl ? 'resource' : 'note') : n.kind),
+          tags: patch.tags !== undefined ? normalizeTags(patch.tags) : n.tags,
+          pinned: patch.pinned !== undefined ? patch.pinned === true : n.pinned,
+          goalId: patch.goalId !== undefined ? (patch.goalId || null) : n.goalId,
+          roadmapId: nextRoadmapId,
+          roadmapStepId: nextStepId,
           folderId: nextFolder,
           updatedAt: now,
         };
       }),
       folders: s.folders.map(normalizeFolder).map(touchFolder(new Set([touchedFolder]), now)),
     }));
+  }
+
+  function togglePinNote(id: string) {
+    const target = state.notes.map(normalizeNote).find((n) => n.id === id);
+    if (!target) return;
+    updateNote(id, { pinned: !target.pinned });
   }
 
   function moveNote(id: string, folderId: string) {
@@ -984,6 +1063,7 @@ export function useLearnFlow() {
     deleteFolder,
     addNote,
     updateNote,
+    togglePinNote,
     moveNote,
     deleteNote,
     logSession,

@@ -78,6 +78,16 @@ export interface Note {
   url: string;
   content: string;
   kind: NoteKind;
+  /** free-text tags, lowercased/trimmed */
+  tags: string[];
+  /** pinned notes sort first */
+  pinned: boolean;
+  /** related learning goal (optional) */
+  goalId: string | null;
+  /** related roadmap (optional) */
+  roadmapId: string | null;
+  /** related roadmap step (optional, requires roadmapId) */
+  roadmapStepId: string | null;
   createdAt: string;
   updatedAt: string;
 }
