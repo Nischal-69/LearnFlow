@@ -4,13 +4,15 @@ import { formatDate, isOverdue, todayString } from '../utils';
 import { Badge, Button, Card, CardHeader, EmptyState, Input } from './ui';
 import { IconPlus, IconTrash } from './icons';
 
-export default function Tasks({ api }: { api: LearnFlowApi }) {
+export default function Tasks({ api, search }: { api: LearnFlowApi; search: string }) {
   const { state, addTask, toggleTask, deleteTask } = api;
   const [title, setTitle] = useState('');
   const [due, setDue] = useState(todayString());
   const [filter, setFilter] = useState<'all' | 'today' | 'done'>('all');
+  const q = search.trim().toLowerCase();
 
   const visible = state.tasks.filter((t) => {
+    if (q && !t.title.toLowerCase().includes(q)) return false;
     if (filter === 'today') return !t.done && t.dueDate <= todayString();
     if (filter === 'done') return t.done;
     return true;

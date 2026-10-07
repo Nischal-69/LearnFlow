@@ -4,11 +4,16 @@ import { formatDate } from '../utils';
 import { Badge, Button, Card, CardHeader, EmptyState, Input, Textarea, Label } from './ui';
 import { IconPlus, IconTrash } from './icons';
 
-export default function Goals({ api }: { api: LearnFlowApi }) {
+export default function Learning({ api, search }: { api: LearnFlowApi; search: string }) {
   const { state, addGoal, toggleGoal, deleteGoal } = api;
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [deadline, setDeadline] = useState('');
+  const q = search.trim().toLowerCase();
+
+  const visible = state.goals.filter((g) =>
+    q ? (g.title + ' ' + g.description).toLowerCase().includes(q) : true,
+  );
 
   return (
     <Card>
@@ -41,12 +46,12 @@ export default function Goals({ api }: { api: LearnFlowApi }) {
         </div>
       </form>
       <div className="grid gap-3 p-4 md:grid-cols-2">
-        {state.goals.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="md:col-span-2">
-            <EmptyState title="No goals yet" hint="Example: Finish HTML & CSS in 3 weeks." />
+            <EmptyState title="No goals here" hint={q ? 'No goals match your search.' : 'Example: Finish HTML & CSS in 3 weeks.'} />
           </div>
         ) : (
-          state.goals.map((g) => (
+          visible.map((g) => (
             <div key={g.id} className="flex flex-col rounded-lg border border-line p-4">
               <div className="flex items-start justify-between gap-2">
                 <div>

@@ -69,4 +69,13 @@ export interface LearnFlowState {
   completions: CompletionEntry[];
 }
 
-export type ViewKey = 'today' | 'tasks' | 'goals' | 'roadmaps' | 'library' | 'history';
+export type ViewKey =
+  | 'dashboard'
+  | 'tasks'
+  | 'roadmaps'
+  | 'learning'
+  | 'streaks'
+  | 'folders'
+  | 'notes'
+  | 'resources'
+  | 'settings';

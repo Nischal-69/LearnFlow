@@ -16,7 +16,7 @@ const TEMPLATES: { title: string; description: string; steps: string[] }[] = [
   },
 ];
 
-export default function Roadmaps({ api }: { api: LearnFlowApi }) {
+export default function Roadmaps({ api, search }: { api: LearnFlowApi; search: string }) {
   const { state, addRoadmap, addRoadmapStep, toggleRoadmapStep, updateStepResource, deleteRoadmap } = api;
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
@@ -73,7 +73,12 @@ export default function Roadmaps({ api }: { api: LearnFlowApi }) {
           <EmptyState title="No roadmaps yet" hint="Create one above, or start from a template." />
         </Card>
       ) : (
-        state.roadmaps.map((r) => {
+        state.roadmaps
+          .filter((r) => {
+            const q = search.trim().toLowerCase();
+            return q ? (r.title + ' ' + r.description).toLowerCase().includes(q) : true;
+          })
+          .map((r) => {
           const done = r.steps.filter((s) => s.done).length;
           const pct = r.steps.length === 0 ? 0 : (done / r.steps.length) * 100;
           const open = openId === r.id;
