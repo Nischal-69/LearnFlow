@@ -1,9 +1,17 @@
+export type TaskPriority = 'low' | 'medium' | 'high';
+export type TaskStatus = 'todo' | 'in_progress' | 'completed';
+
 export interface Task {
   id: string;
   title: string;
+  description: string;
   dueDate: string; // yyyy-mm-dd
-  done: boolean;
-  doneAt: string | null; // ISO
+  priority: TaskPriority;
+  category: string; // free text, '' = none
+  estimatedMinutes: number; // 0 = unset
+  status: TaskStatus;
+  done: boolean; // synced from status (completed ⇔ done)
+  doneAt: string | null; // ISO, stamped when completed
   createdAt: string; // ISO
 }
 

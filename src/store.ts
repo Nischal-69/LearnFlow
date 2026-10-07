@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { CompletionEntry, LearnFlowState } from './types';
+import type { CompletionEntry, LearnFlowState, Task, TaskStatus } from './types';
 import { useLocalStorage } from './hooks';
 import { computeStreak, todayString, uid } from './utils';
 
@@ -16,8 +16,55 @@ const seedState: LearnFlowState = {
   completions: [],
 };
 
+export interface TaskInput {
+  title: string;
+  description: string;
+  dueDate: string;
+  priority: Task['priority'];
+  category: string;
+  estimatedMinutes: number;
+}
+
+/** Fill defaults for tasks saved before the full task system existed. */
+function normalizeTask(raw: Task): Task {
+  const status: TaskStatus = raw.status ?? (raw.done ? 'completed' : 'todo');
+  const done = status === 'completed';
+  return {
+    ...raw,
+    description: raw.description ?? '',
+    priority: raw.priority ?? 'medium',
+    category: raw.category ?? '',
+    estimatedMinutes: raw.estimatedMinutes ?? 0,
+    status,
+    done,
+    doneAt: done ? (raw.doneAt ?? raw.createdAt) : null,
+  };
+}
+
+/** Apply a status transition. Completing stamps doneAt; reopening clears it. */
+function applyStatus(t: Task, status: TaskStatus): { task: Task; didComplete: boolean } {
+  const wasCompleted = t.status === 'completed';
+  const nowCompleted = status === 'completed';
+  return {
+    task: {
+      ...t,
+      status,
+      done: nowCompleted,
+      doneAt: nowCompleted ? (wasCompleted ? t.doneAt : new Date().toISOString()) : null,
+    },
+    didComplete: nowCompleted && !wasCompleted,
+  };
+}
+
 export function useLearnFlow() {
-  const [state, setState] = useLocalStorage<LearnFlowState>(STORAGE_KEY, seedState);
+  const [stored, setStored] = useLocalStorage<LearnFlowState>(STORAGE_KEY, seedState);
+
+  // Migrate tasks saved by older versions (title/dueDate/done only) to the full shape.
+  const state: LearnFlowState = useMemo(
+    () => ({ ...stored, tasks: stored.tasks.map(normalizeTask) }),
+    [stored],
+  );
+  const setState = setStored;
 
   const streak = useMemo(
     () => computeStreak(state.completions.map((c) => c.date)),
@@ -35,16 +82,63 @@ export function useLearnFlow() {
   }
 
   // ---- Tasks ----
-  function addTask(title: string, dueDate: string) {
-    const task = {
+  function addTask(input: TaskInput) {
+    const now = new Date().toISOString();
+    const task: Task = {
       id: uid('task'),
-      title: title.trim(),
-      dueDate: dueDate || todayString(),
+      title: input.title.trim(),
+      description: input.description.trim(),
+      dueDate: input.dueDate || todayString(),
+      priority: input.priority,
+      category: input.category.trim(),
+      estimatedMinutes: Math.max(0, Math.floor(input.estimatedMinutes) || 0),
+      status: 'todo',
       done: false,
-      doneAt: null as string | null,
-      createdAt: new Date().toISOString(),
+      doneAt: null,
+      createdAt: now,
     };
     setState((s) => ({ ...s, tasks: [task, ...s.tasks] }));
+  }
+
+  /** Edit any task field. Moving to completed stamps doneAt + logs history. */
+  function updateTask(id: string, patch: Partial<TaskInput> & { status?: TaskStatus }) {
+    let completedTitle = '';
+    let didComplete = false;
+    setState((s) => ({
+      ...s,
+      tasks: s.tasks.map((raw) => {
+        if (raw.id !== id) return raw;
+        const next: Task = {
+          ...normalizeTask(raw),
+          ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+          ...(patch.description !== undefined ? { description: patch.description } : {}),
+          ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate || todayString() } : {}),
+          ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+          ...(patch.category !== undefined ? { category: patch.category.trim() } : {}),
+          ...(patch.estimatedMinutes !== undefined
+            ? { estimatedMinutes: Math.max(0, Math.floor(patch.estimatedMinutes) || 0) }
+            : {}),
+        };
+        if (patch.status !== undefined && patch.status !== next.status) {
+          const applied = applyStatus(next, patch.status);
+          if (applied.didComplete) {
+            didComplete = true;
+            completedTitle = applied.task.title;
+          }
+          return applied.task;
+        }
+        return next;
+      }),
+    }));
+    if (didComplete) logCompletion({ kind: 'task', title: completedTitle, minutes: 0 });
+  }
+
+  function setTaskStatus(id: string, status: TaskStatus) {
+    updateTask(id, { status });
+  }
+
+  function setTaskPriority(id: string, priority: Task['priority']) {
+    updateTask(id, { priority });
   }
 
   function toggleTask(id: string) {
@@ -52,14 +146,20 @@ export function useLearnFlow() {
     let didComplete = false;
     setState((s) => ({
       ...s,
-      tasks: s.tasks.map((t) => {
+      tasks: s.tasks.map((raw) => {
+        const t = normalizeTask(raw);
         if (t.id !== id) return t;
         const done = !t.done;
         if (done) {
           didComplete = true;
           completedTitle = t.title;
         }
-        return { ...t, done, doneAt: done ? new Date().toISOString() : null };
+        return {
+          ...t,
+          status: done ? ('completed' as TaskStatus) : ('todo' as TaskStatus),
+          done,
+          doneAt: done ? new Date().toISOString() : null,
+        };
       }),
     }));
     if (didComplete) logCompletion({ kind: 'task', title: completedTitle, minutes: 0 });
@@ -239,6 +339,9 @@ export function useLearnFlow() {
     state,
     streak,
     addTask,
+    updateTask,
+    setTaskStatus,
+    setTaskPriority,
     toggleTask,
     deleteTask,
     addGoal,
