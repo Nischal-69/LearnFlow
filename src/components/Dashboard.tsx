@@ -3,7 +3,7 @@ import type { LearnFlowApi } from '../store';
 import { currentRoadmapStep, nextRoadmapStep } from '../store';
 import type { ViewKey } from '../types';
 import { formatDate, goalStats, todayString } from '../utils';
-import { Badge, Button, Card, CardHeader, EmptyState, Input, ProgressBar } from './ui';
+import { Badge, Button, Card, CardHeader, EmptyState, Input, Label, ProgressBar, Textarea } from './ui';
 import {
   IconBook,
   IconCheckCircle,
@@ -11,6 +11,7 @@ import {
   IconFolder,
   IconMap,
   IconNote,
+  IconTrash,
 } from './icons';
 
 const DAILY_LEARNING_TARGET = 3;
@@ -41,7 +42,7 @@ export default function Dashboard({
   go: (v: ViewKey) => void;
   search: string;
 }) {
-  const { state, streak, logSession, toggleTask, toggleRoadmapStep } = api;
+  const { state, streak, logSession, toggleTask, toggleRoadmapStep, saveDailyReview, deleteDailyReview } = api;
   const today = todayString();
   const q = search.trim().toLowerCase();
   const matches = (s: string) => (q ? s.toLowerCase().includes(q) : true);
@@ -166,6 +167,63 @@ export default function Dashboard({
   const [showLog, setShowLog] = useState(false);
   const [sessionTitle, setSessionTitle] = useState('');
   const [minutes, setMinutes] = useState('25');
+
+  // ---- 8. Daily Review (optional, collapsed by default) ----
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewDate, setReviewDate] = useState(today);
+  const [rAccomplished, setRAccomplished] = useState('');
+  const [rLearned, setRLearned] = useState('');
+  const [rNotCompleted, setRNotCompleted] = useState('');
+  const [rTomorrow, setRTomorrow] = useState('');
+  const [editingReviewDate, setEditingReviewDate] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState('');
+  const [showAllReviews, setShowAllReviews] = useState(false);
+
+  const todayReview = (state.dailyReviews ?? []).find((r) => r.date === today);
+  const sortedDaily = [...(state.dailyReviews ?? [])].sort((a, b) => b.date.localeCompare(a.date));
+  const visibleDaily = showAllReviews ? sortedDaily : sortedDaily.slice(0, 14);
+  const sessionsToday = state.completions.filter((c) => c.date === today && c.kind === 'session');
+  const minutesLearnedToday = sessionsToday.reduce((a, c) => a + Math.max(0, c.minutes || 0), 0);
+  const doneTasksToday = state.tasks.filter((t) => t.done && t.doneAt?.startsWith(today));
+  const goalsWithDaily = state.goals.filter((g) => g.status === 'active' && g.dailyTargetMinutes > 0);
+
+  function resetDailyForm() {
+    setReviewDate(today);
+    setRAccomplished('');
+    setRLearned('');
+    setRNotCompleted('');
+    setRTomorrow('');
+    setEditingReviewDate(null);
+    setReviewError('');
+  }
+
+  function submitDaily(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = saveDailyReview({
+      date: reviewDate || today,
+      accomplished: rAccomplished,
+      learned: rLearned,
+      notCompleted: rNotCompleted,
+      planTomorrow: rTomorrow,
+    });
+    if (!ok) {
+      setReviewError('Answer at least one question before saving.');
+      return;
+    }
+    resetDailyForm();
+  }
+
+  function startEditDaily(date: string) {
+    const r = (state.dailyReviews ?? []).find((x) => x.date === date);
+    if (!r) return;
+    setReviewDate(r.date);
+    setRAccomplished(r.accomplished);
+    setRLearned(r.learned);
+    setRNotCompleted(r.notCompleted);
+    setRTomorrow(r.planTomorrow);
+    setEditingReviewDate(r.date);
+    setReviewError('');
+  }
 
   return (
     <div className="space-y-6">
@@ -449,6 +507,171 @@ export default function Dashboard({
           )}
         </section>
       </div>
+
+      {/* 8. Daily Review (optional, collapsed by default — never intrusive) */}
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-ink">Daily Review</h3>
+            {todayReview ? <Badge tone="success">Reviewed today</Badge> : <Badge tone="neutral">Not reviewed yet</Badge>}
+          </div>
+          <button onClick={() => setReviewOpen((v) => !v)} className="text-xs font-medium text-primary-600 hover:text-primary-700">
+            {reviewOpen ? 'Hide' : 'Review today'}
+          </button>
+        </div>
+        {reviewOpen && (
+          <Card>
+            <div className="grid gap-3 p-4 sm:grid-cols-2">
+              <div className="rounded-lg bg-surface p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Today&apos;s Plan</p>
+                <p className="mt-2 text-xs font-medium text-ink">Planned tasks ({dueSet.length})</p>
+                {dueSet.length === 0 ? (
+                  <p className="mt-1 text-sm text-ink-muted">No tasks due today.</p>
+                ) : (
+                  <ul className="mt-1 space-y-1">
+                    {dueSet.slice(0, 6).map((t) => (
+                      <li key={t.id} className="flex items-center gap-1.5 text-sm text-ink-secondary">
+                        <span aria-hidden>{t.done ? '✓' : '○'}</span>
+                        <span className={`min-w-0 flex-1 truncate ${t.done ? 'line-through text-ink-muted' : ''}`}>{t.title}</span>
+                      </li>
+                    ))}
+                    {dueSet.length > 6 && <li className="text-xs text-ink-muted">+ {dueSet.length - 6} more</li>}
+                  </ul>
+                )}
+                <p className="mt-3 text-xs font-medium text-ink">Planned learning (your focus)</p>
+                {goalsWithDaily.length === 0 && !currentStep ? (
+                  <p className="mt-1 text-sm text-ink-muted">No daily targets or roadmap step set.</p>
+                ) : (
+                  <div className="mt-1 space-y-1">
+                    {goalsWithDaily.slice(0, 3).map((g) => {
+                      const s = goalStats(state.completions, g.id, g.weeklyTargetMinutes);
+                      return (
+                        <p key={g.id} className="truncate text-sm text-ink-secondary">
+                          {g.title} <span className="text-xs text-ink-muted">· {s.todayMinutes}/{g.dailyTargetMinutes} min today</span>
+                        </p>
+                      );
+                    })}
+                    {currentStep && activeRoadmap && (
+                      <p className="truncate text-sm text-ink-secondary">
+                        Step: {currentStep.title} <span className="text-xs text-ink-muted">· {activeRoadmap.title}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="rounded-lg bg-surface p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Today&apos;s Reality</p>
+                <p className="mt-2 text-sm text-ink-secondary">
+                  {doneTasksToday.length} task{doneTasksToday.length === 1 ? '' : 's'} completed · {sessionsToday.length} session{sessionsToday.length === 1 ? '' : 's'} · {minutesLearnedToday} min learned
+                </p>
+                {doneTasksToday.length === 0 && sessionsToday.length === 0 ? (
+                  <p className="mt-1 text-sm text-ink-muted">Nothing completed or logged yet today.</p>
+                ) : (
+                  <ul className="mt-1.5 space-y-1">
+                    {doneTasksToday.slice(0, 4).map((t) => (
+                      <li key={t.id} className="flex items-center gap-1.5 text-sm text-ink-secondary">
+                        <span aria-hidden>✓</span>
+                        <span className="min-w-0 flex-1 truncate line-through">{t.title}</span>
+                      </li>
+                    ))}
+                    {sessionsToday.slice(0, 4).map((c) => (
+                      <li key={c.id} className="flex items-center gap-1.5 text-sm text-ink-secondary">
+                        <IconFlame className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                        <span className="min-w-0 flex-1 truncate">{c.title} <span className="text-xs text-ink-muted">· {c.minutes} min</span></span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            <form onSubmit={submitDaily} className="mx-4 mb-4 grid gap-3 rounded-lg bg-surface p-3">
+              <div className="grid gap-3 sm:grid-cols-[180px_1fr] sm:items-end">
+                <div>
+                  <Label>Date</Label>
+                  <Input type="date" value={reviewDate} max={today} onChange={(e) => setReviewDate(e.target.value)} />
+                </div>
+                {editingReviewDate && (
+                  <p className="text-xs text-ink-muted">
+                    Editing {formatDate(editingReviewDate)}.{' '}
+                    <button type="button" onClick={resetDailyForm} className="font-medium text-primary-600 hover:underline">
+                      Start new instead
+                    </button>
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>What did you accomplish today?</Label>
+                <Textarea rows={2} placeholder="e.g. Finished 3 tasks, shipped the navbar" value={rAccomplished} onChange={(e) => setRAccomplished(e.target.value)} />
+              </div>
+              <div>
+                <Label>What did you learn today?</Label>
+                <Textarea rows={2} placeholder="e.g. How flexbox alignment works" value={rLearned} onChange={(e) => setRLearned(e.target.value)} />
+              </div>
+              <div>
+                <Label>What did you not complete?</Label>
+                <Textarea rows={2} placeholder="e.g. Didn't start the grid tutorial" value={rNotCompleted} onChange={(e) => setRNotCompleted(e.target.value)} />
+              </div>
+              <div>
+                <Label>What should you do tomorrow?</Label>
+                <Textarea rows={2} placeholder="e.g. Grid tutorial + review notes" value={rTomorrow} onChange={(e) => setRTomorrow(e.target.value)} />
+              </div>
+              {reviewError && <p className="text-xs text-danger">{reviewError}</p>}
+              <div className="flex gap-2">
+                <Button type="submit" className="flex-1">
+                  {editingReviewDate ? `Update ${formatDate(editingReviewDate)}` : 'Save daily review'}
+                </Button>
+                {editingReviewDate && (
+                  <Button variant="secondary" onClick={resetDailyForm}>
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </form>
+            <div className="space-y-2 p-4 pt-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Previous reviews</p>
+              {sortedDaily.length === 0 ? (
+                <EmptyState title="No reviews yet" hint="Answer the questions above at the end of your day." />
+              ) : (
+                <>
+                  {visibleDaily.map((r) => (
+                    <div key={r.date} className="rounded-lg border border-line p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold text-ink">{formatDate(r.date)}</p>
+                        <div className="flex shrink-0 gap-1">
+                          <button onClick={() => startEditDaily(r.date)} className="rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50">
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete review for ${formatDate(r.date)}?`)) {
+                                deleteDailyReview(r.date);
+                                if (editingReviewDate === r.date) resetDailyForm();
+                              }
+                            }}
+                            className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-danger"
+                            aria-label={`Delete review for ${r.date}`}
+                          >
+                            <IconTrash />
+                          </button>
+                        </div>
+                      </div>
+                      {r.accomplished && <p className="mt-1 text-sm text-ink-secondary"><span className="font-medium text-ink">Accomplished: </span>{r.accomplished}</p>}
+                      {r.learned && <p className="mt-1 text-sm text-ink-secondary"><span className="font-medium text-ink">Learned: </span>{r.learned}</p>}
+                      {r.notCompleted && <p className="mt-1 text-sm text-ink-secondary"><span className="font-medium text-ink">Not completed: </span>{r.notCompleted}</p>}
+                      {r.planTomorrow && <p className="mt-1 text-sm text-ink-secondary"><span className="font-medium text-ink">Tomorrow: </span>{r.planTomorrow}</p>}
+                    </div>
+                  ))}
+                  {sortedDaily.length > 14 && (
+                    <button onClick={() => setShowAllReviews((v) => !v)} className="w-full py-1 text-center text-xs font-medium text-primary-600 hover:underline">
+                      {showAllReviews ? 'Show less' : `Show all ${sortedDaily.length} reviews`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </Card>
+        )}
+      </section>
     </div>
   );
 }

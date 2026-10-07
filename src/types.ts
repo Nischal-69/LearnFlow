@@ -129,6 +129,18 @@ export interface WeeklyReview {
   updatedAt: string;
 }
 
+export interface DailyReview {
+  id: string;
+  /** yyyy-mm-dd in local time */
+  date: string;
+  accomplished: string;
+  learned: string;
+  notCompleted: string;
+  planTomorrow: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LearnFlowState {
   tasks: Task[];
   goals: Goal[];
@@ -137,6 +149,7 @@ export interface LearnFlowState {
   notes: Note[];
   completions: CompletionEntry[];
   weeklyReviews: WeeklyReview[];
+  dailyReviews: DailyReview[];
 }
 
 export type ViewKey =

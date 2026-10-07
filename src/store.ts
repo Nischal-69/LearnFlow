@@ -14,6 +14,7 @@ import type {
   RoadmapStepStatus,
   Task,
   TaskStatus,
+  DailyReview,
   WeeklyReview,
 } from './types';
 import { useLocalStorage } from './hooks';
@@ -37,6 +38,7 @@ const seedState: LearnFlowState = {
   notes: [],
   completions: [],
   weeklyReviews: [],
+  dailyReviews: [],
 };
 
 export interface TaskInput {
@@ -108,6 +110,26 @@ function normalizeReview(raw: WeeklyReview): WeeklyReview {
     learned: r.learned ?? '',
     missed: r.missed ?? '',
     focusNext: r.focusNext ?? '',
+    createdAt,
+    updatedAt: (r as { updatedAt?: string }).updatedAt ?? createdAt,
+  };
+}
+
+function isValidDateOnly(v: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+/** Fill defaults for daily reviews saved by older versions (field may be missing). */
+function normalizeDailyReview(raw: DailyReview): DailyReview {
+  const r = raw as Partial<DailyReview>;
+  const createdAt = r.createdAt ?? new Date().toISOString();
+  return {
+    id: r.id ?? uid('daily-review'),
+    date: r.date && isValidDateOnly(r.date) ? r.date : todayString(),
+    accomplished: r.accomplished ?? '',
+    learned: r.learned ?? '',
+    notCompleted: r.notCompleted ?? '',
+    planTomorrow: r.planTomorrow ?? '',
     createdAt,
     updatedAt: (r as { updatedAt?: string }).updatedAt ?? createdAt,
   };
@@ -324,6 +346,14 @@ export interface WeeklyReviewInput {
   focusNext: string;
 }
 
+export interface DailyReviewInput {
+  date: string;
+  accomplished: string;
+  learned: string;
+  notCompleted: string;
+  planTomorrow: string;
+}
+
 function makeStep(
   title: string,
   extra?: { description?: string; estimatedMinutes?: number },
@@ -390,6 +420,7 @@ export function useLearnFlow() {
       notes,
       completions: (stored.completions ?? []).map(normalizeCompletion),
       weeklyReviews: (stored.weeklyReviews ?? []).map(normalizeReview),
+      dailyReviews: (stored.dailyReviews ?? []).map(normalizeDailyReview),
     };
   }, [stored]);
   const setState = setStored;
@@ -1115,6 +1146,39 @@ export function useLearnFlow() {
     }));
   }
 
+  /** One review per day: save creates or updates the entry for date. Returns false when empty. */
+  function saveDailyReview(input: DailyReviewInput): boolean {
+    const date = input.date.trim().slice(0, 10);
+    if (!isValidDateOnly(date) || date > todayString()) return false;
+    const accomplished = (input.accomplished ?? '').trim();
+    const learned = (input.learned ?? '').trim();
+    const notCompleted = (input.notCompleted ?? '').trim();
+    const planTomorrow = (input.planTomorrow ?? '').trim();
+    if (!accomplished && !learned && !notCompleted && !planTomorrow) return false;
+    const now = new Date().toISOString();
+    setState((s) => {
+      const existing = (s.dailyReviews ?? []).map(normalizeDailyReview).find((r) => r.date === date);
+      if (existing) {
+        return {
+          ...s,
+          dailyReviews: (s.dailyReviews ?? []).map(normalizeDailyReview).map((r) =>
+            r.date === date ? { ...r, accomplished, learned, notCompleted, planTomorrow, updatedAt: now } : r,
+          ),
+        };
+      }
+      const review: DailyReview = { id: uid('daily-review'), date, accomplished, learned, notCompleted, planTomorrow, createdAt: now, updatedAt: now };
+      return { ...s, dailyReviews: [review, ...(s.dailyReviews ?? []).map(normalizeDailyReview)] };
+    });
+    return true;
+  }
+
+  function deleteDailyReview(date: string) {
+    setState((s) => ({
+      ...s,
+      dailyReviews: (s.dailyReviews ?? []).map(normalizeDailyReview).filter((r) => r.date !== date),
+    }));
+  }
+
   function resetAll() {
     setState(seedState);
   }
@@ -1159,6 +1223,8 @@ export function useLearnFlow() {
     deleteCompletion,
     saveWeeklyReview,
     deleteWeeklyReview,
+    saveDailyReview,
+    deleteDailyReview,
     resetAll,
   };
 }
