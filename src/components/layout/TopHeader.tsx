@@ -11,12 +11,14 @@ export default function TopHeader({
   search,
   onSearch,
   onMenu,
+  onOpenSearch,
 }: {
   view: ViewKey;
   api: LearnFlowApi;
   search: string;
   onSearch: (v: string) => void;
   onMenu: () => void;
+  onOpenSearch: () => void;
 }) {
   const meta = PAGE_META[view];
   const [notifOpen, setNotifOpen] = useState(false);
@@ -59,15 +61,22 @@ export default function TopHeader({
           <p className="hidden truncate text-xs text-ink-muted sm:block">{meta.subtitle}</p>
         </div>
 
-        {/* Desktop search */}
+        {/* Desktop search (view filter) + global search hint */}
         <div className="relative hidden w-56 sm:block lg:w-64">
           <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             placeholder="Search…"
-            className="w-full rounded-lg border border-line bg-surface py-1.5 pl-8 pr-3 text-sm text-ink placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+            className="w-full rounded-lg border border-line bg-surface py-1.5 pl-8 pr-14 text-sm text-ink placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
           />
+          <button
+            onClick={onOpenSearch}
+            title="Global search (Ctrl+K)"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded border border-line bg-white px-1.5 py-0.5 text-[11px] text-ink-muted hover:text-ink"
+          >
+            Ctrl K
+          </button>
         </div>
 
         {/* Mobile search toggle */}
@@ -130,6 +139,15 @@ export default function TopHeader({
               className="w-full rounded-lg border border-line bg-surface py-1.5 pl-8 pr-3 text-sm text-ink placeholder:text-slate-400 focus:border-primary-500 focus:outline-none"
             />
           </div>
+          <button
+            onClick={() => {
+              setMobileSearch(false);
+              onOpenSearch();
+            }}
+            className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary"
+          >
+            Search everything…
+          </button>
         </div>
       )}
     </header>

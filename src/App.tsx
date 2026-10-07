@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ViewKey } from './types';
 import { useLearnFlow } from './store';
+import SearchOverlay from './components/SearchOverlay';
 import Dashboard from './components/Dashboard';
 import Tasks from './components/Tasks';
 import Learning from './components/Learning';
@@ -22,11 +23,38 @@ export default function App() {
   const [view, setView] = useState<ViewKey>('dashboard');
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
 
   function navigate(v: ViewKey) {
     setView(v);
     setDrawerOpen(false);
   }
+
+  function openPalette() {
+    setPaletteQuery(search);
+    setPaletteOpen(true);
+  }
+
+  function selectGlobal(v: ViewKey, q: string) {
+    setSearch(q);
+    navigate(v);
+    setPaletteOpen(false);
+  }
+
+  // Global search shortcut: Ctrl/Cmd+K opens, Esc closes.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openPalette();
+      } else if (e.key === 'Escape') {
+        setPaletteOpen(false);
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [search]);
 
   return (
     <div className="min-h-screen bg-surface text-ink">
@@ -37,7 +65,7 @@ export default function App() {
 
       {/* Content column */}
       <div className="flex min-h-screen flex-col md:pl-64">
-        <TopHeader view={view} api={api} search={search} onSearch={setSearch} onMenu={() => setDrawerOpen(true)} />
+        <TopHeader view={view} api={api} search={search} onSearch={setSearch} onMenu={() => setDrawerOpen(true)} onOpenSearch={openPalette} />
 
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 pb-24 md:pb-10">
           {view === 'dashboard' && <Dashboard api={api} go={navigate} search={search} />}
@@ -69,6 +97,17 @@ export default function App() {
             <Sidebar view={view} onNavigate={navigate} />
           </div>
         </div>
+      )}
+
+      {/* Global search overlay */}
+      {paletteOpen && (
+        <SearchOverlay
+          api={api}
+          query={paletteQuery}
+          onQuery={setPaletteQuery}
+          onSelect={selectGlobal}
+          onClose={() => setPaletteOpen(false)}
+        />
       )}
 
       {/* Mobile bottom nav */}
