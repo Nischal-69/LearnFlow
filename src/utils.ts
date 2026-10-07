@@ -59,32 +59,75 @@ export function uniqueSortedDates(dates: string[]): string[] {
 export interface StreakInfo {
   current: number;
   longest: number;
+  /** yyyy-mm-dd where the longest run started, null when no activity */
+  longestStart: string | null;
+  /** yyyy-mm-dd where the longest run ended, null when no activity */
+  longestEnd: string | null;
   activeDays: number;
+  /** learning days in the current calendar month */
+  monthDays: number;
+  /** YYYY-MM prefix of "today" used for monthDays */
+  monthKey: string;
   loggedToday: boolean;
   lastActiveDate: string | null;
+  /** total learning minutes per yyyy-mm-dd (session-only) */
+  minutesByDate: Record<string, number>;
+  /** completed learning sessions per yyyy-mm-dd (session-only) */
+  sessionsByDate: Record<string, number>;
+}
+
+function emptyStreak(today: string): StreakInfo {
+  return {
+    current: 0,
+    longest: 0,
+    longestStart: null,
+    longestEnd: null,
+    activeDays: 0,
+    monthDays: 0,
+    monthKey: today.slice(0, 7),
+    loggedToday: false,
+    lastActiveDate: null,
+    minutesByDate: {},
+    sessionsByDate: {},
+  };
+}
+
+function isValidDateOnly(dateStr: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
 }
 
 export function computeStreak(allDates: string[]): StreakInfo {
-  const dates = uniqueSortedDates(allDates);
-  if (dates.length === 0) {
-    return { current: 0, longest: 0, activeDays: 0, loggedToday: false, lastActiveDate: null };
-  }
   const today = todayString();
+  const dates = uniqueSortedDates(allDates.filter(isValidDateOnly));
+  if (dates.length === 0) {
+    return emptyStreak(today);
+  }
   const loggedToday = dates.includes(today);
 
-  // longest
+  // longest run + its exact start/end dates. Earliest run wins ties
+  // so the personal best is stable and never lost while history exists.
   let longest = 1;
+  let longestStart = dates[0];
+  let longestEnd = dates[0];
   let run = 1;
+  let runStart = dates[0];
   for (let i = 1; i < dates.length; i++) {
     if (daysBetween(dates[i - 1], dates[i]) === 1) {
       run += 1;
     } else {
       run = 1;
+      runStart = dates[i];
     }
-    longest = Math.max(longest, run);
+    if (run > longest) {
+      longest = run;
+      longestStart = runStart;
+      longestEnd = dates[i];
+    }
   }
 
-  // current streak: count back from today (or yesterday if today not logged)
+  // current streak: count back from today (or yesterday if today not logged).
+  // Miss a day -> gap -> current is 0. Learn today -> continues iff
+  // yesterday was also a learning day, otherwise a new streak of 1.
   const set = new Set(dates);
   let current = 0;
   const cursor = new Date();
@@ -102,13 +145,77 @@ export function computeStreak(allDates: string[]): StreakInfo {
     }
   }
 
+  const monthKey = today.slice(0, 7);
   return {
     current,
     longest,
+    longestStart,
+    longestEnd,
     activeDays: dates.length,
+    monthDays: dates.filter((d) => d.startsWith(monthKey)).length,
+    monthKey,
     loggedToday,
     lastActiveDate: dates[dates.length - 1],
+    minutesByDate: {},
+    sessionsByDate: {},
   };
+}
+
+/**
+ * Streak source of truth for LearnFlow.
+ *
+ * A learning day counts ONLY when at least one completed learning session
+ * (kind === 'session') was recorded for that date. Tasks, goals, and
+ * roadmap-step completions never count. Everything is derived from actual
+ * completion records — nothing is estimated or faked.
+ */
+export function computeLearningStreak(completions: CompletionEntry[]): StreakInfo {
+  const today = todayString();
+  const minutesByDate: Record<string, number> = {};
+  const sessionsByDate: Record<string, number> = {};
+  for (const c of completions) {
+    if (c.kind !== 'session') continue;
+    if (!isValidDateOnly(c.date)) continue;
+    if (c.date > today) continue; // ignore future-dated records
+    minutesByDate[c.date] = (minutesByDate[c.date] ?? 0) + Math.max(0, c.minutes || 0);
+    sessionsByDate[c.date] = (sessionsByDate[c.date] ?? 0) + 1;
+  }
+  const base = computeStreak(Object.keys(minutesByDate));
+  return { ...base, minutesByDate, sessionsByDate };
+}
+
+/** Intensity 0-4 based on total learning minutes in a day. */
+export function intensityForMinutes(minutes: number): 0 | 1 | 2 | 3 | 4 {
+  if (minutes <= 0) return 0;
+  if (minutes < 30) return 1;
+  if (minutes < 60) return 2;
+  if (minutes < 120) return 3;
+  return 4;
+}
+
+/** Parse a YYYY-MM key into year/month numbers. */
+export function parseMonthKey(monthKey: string): { year: number; month: number } {
+  const [y, m] = monthKey.split('-').map(Number);
+  const now = new Date();
+  const year = Number.isFinite(y) ? y : now.getFullYear();
+  const month = Number.isFinite(m) && m >= 1 && m <= 12 ? m : now.getMonth() + 1;
+  return { year, month };
+}
+
+/** Shift a YYYY-MM key by delta months (negative = back). */
+export function shiftMonthKey(monthKey: string, delta: number): string {
+  const { year, month } = parseMonthKey(monthKey);
+  const d = new Date(year, month - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Human label for a YYYY-MM key, e.g. "October 2026". */
+export function formatMonthKey(monthKey: string): string {
+  const { year, month } = parseMonthKey(monthKey);
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 export function last7Days(): string[] {

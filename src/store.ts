@@ -12,7 +12,7 @@ import type {
   TaskStatus,
 } from './types';
 import { useLocalStorage } from './hooks';
-import { computeStreak, todayString, uid } from './utils';
+import { computeLearningStreak, todayString, uid } from './utils';
 
 export const STORAGE_KEY = 'learnflow-state-v1';
 
@@ -240,10 +240,9 @@ export function useLearnFlow() {
   );
   const setState = setStored;
 
-  const streak = useMemo(
-    () => computeStreak(state.completions.map((c) => c.date)),
-    [state.completions],
-  );
+  // Streak source of truth: session-only learning days derived from
+  // actual completion records. Tasks/goals/roadmap-steps never count.
+  const streak = useMemo(() => computeLearningStreak(state.completions), [state.completions]);
 
   function logCompletion(
     entry: Partial<CompletionEntry> & { kind: CompletionKind; title: string },
