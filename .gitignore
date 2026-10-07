@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+dist-ssr/
+
+# vite
+*.local
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# os
+.DS_Store
+Thumbs.db
