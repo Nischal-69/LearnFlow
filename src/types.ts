@@ -15,12 +15,17 @@ export interface Task {
   createdAt: string; // ISO
 }
 
+export type GoalStatus = 'active' | 'paused' | 'completed';
+
 export interface Goal {
   id: string;
   title: string;
   description: string;
-  deadline: string; // yyyy-mm-dd or ''
-  completed: boolean;
+  motivation: string; // why I want to learn this
+  deadline: string; // target date, yyyy-mm-dd or ''
+  dailyTargetMinutes: number; // 0 = no target
+  weeklyTargetMinutes: number; // 0 = no target
+  status: GoalStatus;
   completedAt: string | null;
   createdAt: string;
 }
@@ -65,6 +70,8 @@ export interface CompletionEntry {
   kind: CompletionKind;
   title: string;
   minutes: number;
+  /** linked goal, if the activity was recorded against one */
+  goalId: string | null;
   createdAt: string;
 }
 

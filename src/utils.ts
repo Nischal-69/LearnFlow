@@ -1,3 +1,5 @@
+import type { CompletionEntry } from './types';
+
 export function uid(prefix = 'id'): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -117,4 +119,58 @@ export function last7Days(): string[] {
     out.push(toISODate(d));
   }
   return out;
+}
+
+export interface GoalStats {
+  /** linked minutes in the last 7 days */
+  weekMinutes: number;
+  /** linked minutes logged today */
+  todayMinutes: number;
+  /** total linked minutes of all time */
+  totalMinutes: number;
+  /** weekMinutes / weeklyTarget as 0-100, or null when no weekly target */
+  progress: number | null;
+  /** consecutive-day streak from linked activity */
+  streak: number;
+  /** yyyy-mm-dd of most recent linked activity, or null */
+  lastDate: string | null;
+  /** number of linked sessions of all time */
+  sessions: number;
+}
+
+/**
+ * Progress comes only from recorded activity linked to the goal —
+ * never estimated, never inferred from other entities.
+ */
+export function goalStats(
+  completions: CompletionEntry[],
+  goalId: string,
+  weeklyTargetMinutes: number,
+): GoalStats {
+  const linked = completions.filter((c) => c.goalId === goalId);
+  const today = todayString();
+  const week = new Set(last7Days());
+  let weekMinutes = 0;
+  let todayMinutes = 0;
+  let totalMinutes = 0;
+  let sessions = 0;
+  for (const c of linked) {
+    totalMinutes += c.minutes || 0;
+    if (c.kind === 'session') sessions += 1;
+    if (week.has(c.date)) weekMinutes += c.minutes || 0;
+    if (c.date === today) todayMinutes += c.minutes || 0;
+  }
+  const dates = uniqueSortedDates(linked.map((c) => c.date));
+  return {
+    weekMinutes,
+    todayMinutes,
+    totalMinutes,
+    progress:
+      weeklyTargetMinutes > 0
+        ? Math.min(100, Math.round((weekMinutes / weeklyTargetMinutes) * 100))
+        : null,
+    streak: computeStreak(dates).current,
+    lastDate: dates.length > 0 ? dates[dates.length - 1] : null,
+    sessions,
+  };
 }

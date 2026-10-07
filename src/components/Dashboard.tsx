@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { LearnFlowApi } from '../store';
 import type { ViewKey } from '../types';
-import { formatDate, todayString } from '../utils';
+import { formatDate, goalStats, todayString } from '../utils';
 import { Badge, Button, Card, CardHeader, EmptyState, Input, ProgressBar } from './ui';
 import {
   IconBook,
@@ -62,22 +62,14 @@ export default function Dashboard({
     .filter((t) => t.done && t.doneAt?.startsWith(today) && matches(t.title))
     .slice(0, 5);
 
-  // ---- 3. Learning Goal (oldest active) ----
+  // ---- 3. Learning Goal (oldest active; progress from recorded sessions only) ----
   const mainGoal = [...state.goals]
-    .filter((g) => !g.completed)
+    .filter((g) => g.status === 'active')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-  const goalRoadmap = mainGoal
-    ? state.roadmaps.find(
-        (r) =>
-          r.title.toLowerCase().includes(mainGoal.title.toLowerCase()) ||
-          mainGoal.title.toLowerCase().includes(r.title.toLowerCase()),
-      )
-    : undefined;
-  const goalPct = !mainGoal
-    ? 0
-    : goalRoadmap && goalRoadmap.steps.length > 0
-      ? Math.round((goalRoadmap.steps.filter((s) => s.done).length / goalRoadmap.steps.length) * 100)
-      : 0;
+  const mainGoalStats = mainGoal
+    ? goalStats(state.completions, mainGoal.id, mainGoal.weeklyTargetMinutes)
+    : null;
+  const goalPct = mainGoalStats?.progress ?? 0;
 
   // ---- 4. Current Roadmap (oldest with incomplete steps) ----
   const activeRoadmap = [...state.roadmaps]
@@ -287,7 +279,11 @@ export default function Dashboard({
                 )}
                 <div className="mt-3 space-y-1.5">
                   <div className="flex items-center justify-between text-xs text-ink-muted">
-                    <span>Progress</span>
+                    <span>
+                      {mainGoal.weeklyTargetMinutes > 0
+                        ? `${mainGoalStats?.weekMinutes ?? 0}/${mainGoal.weeklyTargetMinutes} min this week`
+                        : `${mainGoalStats?.totalMinutes ?? 0} min logged`}
+                    </span>
                     <span className="font-semibold text-ink">{goalPct}%</span>
                   </div>
                   <ProgressBar value={goalPct} tone={goalPct === 100 ? 'success' : 'primary'} />

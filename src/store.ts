@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { CompletionEntry, LearnFlowState, Task, TaskStatus } from './types';
+import type { CompletionEntry, Goal, GoalStatus, LearnFlowState, Task, TaskStatus } from './types';
 import { useLocalStorage } from './hooks';
 import { computeStreak, todayString, uid } from './utils';
 
@@ -23,6 +23,31 @@ export interface TaskInput {
   priority: Task['priority'];
   category: string;
   estimatedMinutes: number;
+}
+
+export interface GoalInput {
+  title: string;
+  description: string;
+  motivation: string;
+  deadline: string;
+  dailyTargetMinutes: number;
+  weeklyTargetMinutes: number;
+}
+
+/** Fill defaults for goals saved before the full goals system existed. */
+function normalizeGoal(raw: Goal): Goal {
+  const status: GoalStatus =
+    raw.status ?? ((raw as unknown as { completed?: boolean }).completed ? 'completed' : 'active');
+  const completed = status === 'completed';
+  return {
+    ...raw,
+    motivation: raw.motivation ?? '',
+    deadline: raw.deadline ?? '',
+    dailyTargetMinutes: raw.dailyTargetMinutes ?? 0,
+    weeklyTargetMinutes: raw.weeklyTargetMinutes ?? 0,
+    status,
+    completedAt: completed ? (raw.completedAt ?? raw.createdAt) : null,
+  };
 }
 
 /** Fill defaults for tasks saved before the full task system existed. */
@@ -59,9 +84,14 @@ function applyStatus(t: Task, status: TaskStatus): { task: Task; didComplete: bo
 export function useLearnFlow() {
   const [stored, setStored] = useLocalStorage<LearnFlowState>(STORAGE_KEY, seedState);
 
-  // Migrate tasks saved by older versions (title/dueDate/done only) to the full shape.
+  // Migrate tasks/goals saved by older versions to the full shapes.
   const state: LearnFlowState = useMemo(
-    () => ({ ...stored, tasks: stored.tasks.map(normalizeTask) }),
+    () => ({
+      ...stored,
+      tasks: stored.tasks.map(normalizeTask),
+      goals: stored.goals.map(normalizeGoal),
+      completions: stored.completions.map((c) => ({ ...c, goalId: c.goalId ?? null })),
+    }),
     [stored],
   );
   const setState = setStored;
@@ -71,10 +101,16 @@ export function useLearnFlow() {
     [state.completions],
   );
 
-  function logCompletion(entry: Omit<CompletionEntry, 'id' | 'createdAt' | 'date'> & { date?: string }) {
+  function logCompletion(
+    entry: Omit<CompletionEntry, 'id' | 'createdAt' | 'date' | 'goalId'> & {
+      date?: string;
+      goalId?: string | null;
+    },
+  ) {
     const full: CompletionEntry = {
       id: uid('log'),
       date: entry.date ?? todayString(),
+      goalId: null,
       createdAt: new Date().toISOString(),
       ...entry,
     } as CompletionEntry;
@@ -170,40 +206,72 @@ export function useLearnFlow() {
   }
 
   // ---- Goals ----
-  function addGoal(title: string, description: string, deadline: string) {
-    setState((s) => ({
-      ...s,
-      goals: [
-        {
-          id: uid('goal'),
-          title: title.trim(),
-          description: description.trim(),
-          deadline,
-          completed: false,
-          completedAt: null,
-          createdAt: new Date().toISOString(),
-        },
-        ...s.goals,
-      ],
-    }));
+  function addGoal(input: GoalInput) {
+    const now = new Date().toISOString();
+    const goal: Goal = {
+      id: uid('goal'),
+      title: input.title.trim(),
+      description: input.description.trim(),
+      motivation: input.motivation.trim(),
+      deadline: input.deadline,
+      dailyTargetMinutes: Math.max(0, Math.floor(input.dailyTargetMinutes) || 0),
+      weeklyTargetMinutes: Math.max(0, Math.floor(input.weeklyTargetMinutes) || 0),
+      status: 'active',
+      completedAt: null,
+      createdAt: now,
+    };
+    setState((s) => ({ ...s, goals: [goal, ...s.goals] }));
   }
 
-  function toggleGoal(id: string) {
-    let title = '';
+  /** Edit any goal field. Status transitions stamp/clear completedAt and log completion. */
+  function updateGoal(id: string, patch: Partial<GoalInput> & { status?: GoalStatus }) {
+    let completedTitle = '';
+    let completedGoalId = '';
     let didComplete = false;
     setState((s) => ({
       ...s,
-      goals: s.goals.map((g) => {
-        if (g.id !== id) return g;
-        const completed = !g.completed;
-        if (completed) {
-          didComplete = true;
-          title = g.title;
+      goals: s.goals.map((raw) => {
+        if (raw.id !== id) return raw;
+        const next: Goal = {
+          ...normalizeGoal(raw),
+          ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+          ...(patch.description !== undefined ? { description: patch.description } : {}),
+          ...(patch.motivation !== undefined ? { motivation: patch.motivation.trim() } : {}),
+          ...(patch.deadline !== undefined ? { deadline: patch.deadline } : {}),
+          ...(patch.dailyTargetMinutes !== undefined
+            ? { dailyTargetMinutes: Math.max(0, Math.floor(patch.dailyTargetMinutes) || 0) }
+            : {}),
+          ...(patch.weeklyTargetMinutes !== undefined
+            ? { weeklyTargetMinutes: Math.max(0, Math.floor(patch.weeklyTargetMinutes) || 0) }
+            : {}),
+        };
+        if (patch.status !== undefined && patch.status !== next.status) {
+          const wasCompleted = next.status === 'completed';
+          const nowCompleted = patch.status === 'completed';
+          if (nowCompleted && !wasCompleted) {
+            didComplete = true;
+            completedTitle = next.title;
+            completedGoalId = next.id;
+          }
+          return {
+            ...next,
+            status: patch.status,
+            completedAt: nowCompleted
+              ? wasCompleted
+                ? next.completedAt
+                : new Date().toISOString()
+              : null,
+          };
         }
-        return { ...g, completed, completedAt: completed ? new Date().toISOString() : null };
+        return next;
       }),
     }));
-    if (didComplete) logCompletion({ kind: 'goal', title, minutes: 0 });
+    if (didComplete)
+      logCompletion({ kind: 'goal', title: completedTitle, minutes: 0, goalId: completedGoalId });
+  }
+
+  function setGoalStatus(id: string, status: GoalStatus) {
+    updateGoal(id, { status });
   }
 
   function deleteGoal(id: string) {
@@ -323,8 +391,14 @@ export function useLearnFlow() {
   }
 
   // ---- Sessions ----
-  function logSession(title: string, minutes: number, date?: string) {
-    logCompletion({ kind: 'session', title: title.trim() || 'Learning session', minutes, date });
+  function logSession(title: string, minutes: number, date?: string, goalId?: string) {
+    logCompletion({
+      kind: 'session',
+      title: title.trim() || 'Learning session',
+      minutes,
+      date,
+      goalId: goalId ?? null,
+    });
   }
 
   function deleteCompletion(id: string) {
@@ -345,7 +419,8 @@ export function useLearnFlow() {
     toggleTask,
     deleteTask,
     addGoal,
-    toggleGoal,
+    updateGoal,
+    setGoalStatus,
     deleteGoal,
     addRoadmap,
     addRoadmapStep,
