@@ -133,6 +133,7 @@ export type ViewKey =
   | 'roadmaps'
   | 'learning'
   | 'streaks'
+  | 'progress'
   | 'library'
   | 'folders'
   | 'notes'

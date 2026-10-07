@@ -6,6 +6,7 @@ import Tasks from './components/Tasks';
 import Learning from './components/Learning';
 import Roadmaps from './components/Roadmaps';
 import Streaks from './components/Streaks';
+import Progress from './components/Progress';
 import Library from './components/Library';
 import Folders from './components/Folders';
 import Notes from './components/Notes';
@@ -44,6 +45,7 @@ export default function App() {
           {view === 'roadmaps' && <Roadmaps api={api} search={search} />}
           {view === 'learning' && <Learning api={api} search={search} />}
           {view === 'streaks' && <Streaks api={api} />}
+          {view === 'progress' && <Progress api={api} />}
           {view === 'library' && <Library api={api} search={search} />}
           {view === 'folders' && <Folders api={api} search={search} />}
           {view === 'notes' && <Notes api={api} search={search} />}

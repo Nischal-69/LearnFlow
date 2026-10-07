@@ -5,6 +5,7 @@ import {
   IconMap,
   IconBook,
   IconFlame,
+  IconHistory,
   IconFolder,
   IconNote,
   IconBookmark,
@@ -31,6 +32,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: 'roadmaps', label: 'Roadmaps', icon: (c) => <IconMap className={c} /> },
       { key: 'learning', label: 'Learning', icon: (c) => <IconBook className={c} /> },
       { key: 'streaks', label: 'Streaks', icon: (c) => <IconFlame className={c} /> },
+      { key: 'progress', label: 'Progress', icon: (c) => <IconHistory className={c} /> },
     ],
   },
   {
@@ -56,6 +58,7 @@ export const PAGE_META: Record<ViewKey, { title: string; subtitle: string }> = {
   roadmaps: { title: 'Roadmaps', subtitle: 'Break big topics into steps.' },
   learning: { title: 'Learning', subtitle: 'Outcomes you are working toward.' },
   streaks: { title: 'Streaks', subtitle: 'Build the streak, day by day.' },
+  progress: { title: 'Progress', subtitle: 'Meaningful stats, simply.' },
   library: { title: 'Learning Library', subtitle: 'Folders, notes, resources — organized.' },
   folders: { title: 'My Folders', subtitle: 'Organize notes by topic.' },
   notes: { title: 'Learning Notes', subtitle: 'Summaries and references.' },
