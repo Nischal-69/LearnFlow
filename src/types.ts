@@ -118,6 +118,17 @@ export interface CompletionEntry {
   createdAt: string;
 }
 
+export interface WeeklyReview {
+  id: string;
+  /** ISO week key, YYYY-Www */
+  weekKey: string;
+  learned: string;
+  missed: string;
+  focusNext: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LearnFlowState {
   tasks: Task[];
   goals: Goal[];
@@ -125,6 +136,7 @@ export interface LearnFlowState {
   folders: Folder[];
   notes: Note[];
   completions: CompletionEntry[];
+  weeklyReviews: WeeklyReview[];
 }
 
 export type ViewKey =

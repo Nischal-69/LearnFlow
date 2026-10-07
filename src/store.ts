@@ -14,9 +14,10 @@ import type {
   RoadmapStepStatus,
   Task,
   TaskStatus,
+  WeeklyReview,
 } from './types';
 import { useLocalStorage } from './hooks';
-import { computeLearningStreak, todayString, uid } from './utils';
+import { computeLearningStreak, todayString, uid, weekKeyFor } from './utils';
 
 export const STORAGE_KEY = 'learnflow-state-v1';
 
@@ -35,6 +36,7 @@ const seedState: LearnFlowState = {
   ],
   notes: [],
   completions: [],
+  weeklyReviews: [],
 };
 
 export interface TaskInput {
@@ -88,6 +90,26 @@ function normalizeCompletion(raw: CompletionEntry): CompletionEntry {
     next: (r as { next?: string }).next ?? '',
     notes: (r as { notes?: string }).notes ?? '',
     createdAt: r.createdAt ?? new Date().toISOString(),
+  };
+}
+
+function isValidWeekKey(v: string): boolean {
+  return /^\d{4}-W\d{2}$/.test(v);
+}
+
+/** Fill defaults for weekly reviews saved by older versions (field may be missing). */
+function normalizeReview(raw: WeeklyReview): WeeklyReview {
+  const r = raw as Partial<WeeklyReview>;
+  const createdAt = r.createdAt ?? new Date().toISOString();
+  const weekKey = r.weekKey && isValidWeekKey(r.weekKey) ? r.weekKey : weekKeyFor(todayString());
+  return {
+    id: r.id ?? uid('review'),
+    weekKey,
+    learned: r.learned ?? '',
+    missed: r.missed ?? '',
+    focusNext: r.focusNext ?? '',
+    createdAt,
+    updatedAt: (r as { updatedAt?: string }).updatedAt ?? createdAt,
   };
 }
 
@@ -295,6 +317,13 @@ export interface NotePatch {
   roadmapStepId?: string | null;
 }
 
+export interface WeeklyReviewInput {
+  weekKey: string;
+  learned: string;
+  missed: string;
+  focusNext: string;
+}
+
 function makeStep(
   title: string,
   extra?: { description?: string; estimatedMinutes?: number },
@@ -354,12 +383,13 @@ export function useLearnFlow() {
     );
     return {
       ...stored,
-      tasks: stored.tasks.map(normalizeTask),
-      goals: stored.goals.map(normalizeGoal),
+      tasks: (stored.tasks ?? []).map(normalizeTask),
+      goals: (stored.goals ?? []).map(normalizeGoal),
       roadmaps: (stored.roadmaps ?? []).map(normalizeRoadmap),
       folders: safeFolders,
       notes,
       completions: (stored.completions ?? []).map(normalizeCompletion),
+      weeklyReviews: (stored.weeklyReviews ?? []).map(normalizeReview),
     };
   }, [stored]);
   const setState = setStored;
@@ -1053,6 +1083,38 @@ export function useLearnFlow() {
     setState((s) => ({ ...s, completions: s.completions.filter((c) => c.id !== id) }));
   }
 
+  /** One review per ISO week: save creates or updates the entry for weekKey. Returns false when empty. */
+  function saveWeeklyReview(input: WeeklyReviewInput): boolean {
+    const weekKey = input.weekKey.trim();
+    if (!isValidWeekKey(weekKey)) return false;
+    const learned = (input.learned ?? '').trim();
+    const missed = (input.missed ?? '').trim();
+    const focusNext = (input.focusNext ?? '').trim();
+    if (!learned && !missed && !focusNext) return false;
+    const now = new Date().toISOString();
+    setState((s) => {
+      const existing = (s.weeklyReviews ?? []).map(normalizeReview).find((r) => r.weekKey === weekKey);
+      if (existing) {
+        return {
+          ...s,
+          weeklyReviews: (s.weeklyReviews ?? []).map(normalizeReview).map((r) =>
+            r.weekKey === weekKey ? { ...r, learned, missed, focusNext, updatedAt: now } : r,
+          ),
+        };
+      }
+      const review: WeeklyReview = { id: uid('review'), weekKey, learned, missed, focusNext, createdAt: now, updatedAt: now };
+      return { ...s, weeklyReviews: [review, ...(s.weeklyReviews ?? []).map(normalizeReview)] };
+    });
+    return true;
+  }
+
+  function deleteWeeklyReview(weekKey: string) {
+    setState((s) => ({
+      ...s,
+      weeklyReviews: (s.weeklyReviews ?? []).map(normalizeReview).filter((r) => r.weekKey !== weekKey),
+    }));
+  }
+
   function resetAll() {
     setState(seedState);
   }
@@ -1095,6 +1157,8 @@ export function useLearnFlow() {
     logLearningSession,
     updateLearningSession,
     deleteCompletion,
+    saveWeeklyReview,
+    deleteWeeklyReview,
     resetAll,
   };
 }

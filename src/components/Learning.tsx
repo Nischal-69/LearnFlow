@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { LearnFlowApi, LearningSessionInput } from '../store';
 import type { CompletionEntry, Goal, GoalStatus } from '../types';
-import { formatDate, goalStats, todayString } from '../utils';
+import { currentWeekKey, formatDate, formatWeekKey, goalStats, todayString } from '../utils';
+import { verifyGoal, type VerificationStatus } from '../verification';
 import { Badge, Button, Card, CardHeader, EmptyState, Input, Label, Modal, ProgressBar, Textarea } from './ui';
 import { IconCalendar, IconFlame, IconPlus, IconTrash } from './icons';
 
@@ -22,6 +23,10 @@ const STATUS_LABEL: Record<GoalStatus, string> = {
 
 function statusTone(s: GoalStatus): 'primary' | 'warning' | 'success' {
   return s === 'completed' ? 'success' : s === 'paused' ? 'warning' : 'primary';
+}
+
+function verificationTone(s: VerificationStatus): 'success' | 'primary' | 'neutral' {
+  return s === 'Completed' ? 'success' : s === 'Still Learning' ? 'primary' : 'neutral';
 }
 
 interface GoalForm {
@@ -105,7 +110,7 @@ function Reflection({ label, value }: { label: string; value: string }) {
 }
 
 export default function Learning({ api, search }: { api: LearnFlowApi; search: string }) {
-  const { state, addGoal, updateGoal, deleteGoal, logLearningSession, updateLearningSession, deleteCompletion } = api;
+  const { state, addGoal, updateGoal, deleteGoal, logLearningSession, updateLearningSession, deleteCompletion, saveWeeklyReview, deleteWeeklyReview } = api;
   const [filter, setFilter] = useState<Filter>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
@@ -113,6 +118,12 @@ export default function Learning({ api, search }: { api: LearnFlowApi; search: s
   const [logOpen, setLogOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<CompletionEntry | null>(null);
   const [logForm, setLogForm] = useState<LogForm>(blankLogForm());
+  const [reviewWeek, setReviewWeek] = useState(currentWeekKey());
+  const [reviewLearned, setReviewLearned] = useState('');
+  const [reviewMissed, setReviewMissed] = useState('');
+  const [reviewFocus, setReviewFocus] = useState('');
+  const [editingReviewWeek, setEditingReviewWeek] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState('');
   const q = search.trim().toLowerCase();
 
   const goalById = useMemo(() => new Map(state.goals.map((g) => [g.id, g])), [state.goals]);
@@ -221,6 +232,52 @@ export default function Learning({ api, search }: { api: LearnFlowApi; search: s
       ? `${s.title} ${s.understood} ${s.struggled} ${s.next} ${s.notes}`.toLowerCase().includes(q)
       : true,
   );
+
+  const verifications = useMemo(
+    () => visibleGoals.map((g) => ({ goal: g, v: verifyGoal(g, state.completions, state.notes, state.roadmaps) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleGoals, state.completions, state.notes, state.roadmaps],
+  );
+
+  const sortedReviews = useMemo(
+    () => [...(state.weeklyReviews ?? [])].sort((a, b) => b.weekKey.localeCompare(a.weekKey)),
+    [state.weeklyReviews],
+  );
+
+  function resetReviewForm() {
+    setReviewWeek(currentWeekKey());
+    setReviewLearned('');
+    setReviewMissed('');
+    setReviewFocus('');
+    setEditingReviewWeek(null);
+    setReviewError('');
+  }
+
+  function submitReview(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = saveWeeklyReview({
+      weekKey: reviewWeek.trim() || currentWeekKey(),
+      learned: reviewLearned,
+      missed: reviewMissed,
+      focusNext: reviewFocus,
+    });
+    if (!ok) {
+      setReviewError('Answer at least one question before saving.');
+      return;
+    }
+    resetReviewForm();
+  }
+
+  function startEditReview(weekKey: string) {
+    const r = (state.weeklyReviews ?? []).find((x) => x.weekKey === weekKey);
+    if (!r) return;
+    setReviewWeek(r.weekKey);
+    setReviewLearned(r.learned);
+    setReviewMissed(r.missed);
+    setReviewFocus(r.focusNext);
+    setEditingReviewWeek(r.weekKey);
+    setReviewError('');
+  }
 
   const logValid = logForm.title.trim().length > 0 && (parseInt(logForm.minutes, 10) || 0) >= 1;
   const selectedSteps = logForm.roadmapId ? stepsForRoadmap(logForm.roadmapId) : [];
@@ -455,6 +512,202 @@ export default function Learning({ api, search }: { api: LearnFlowApi; search: s
               );
             })
           )}
+        </div>
+      </Card>
+
+      {/* Did You Learn? — planned vs actually recorded, per goal */}
+      <Card>
+        <CardHeader
+          title="Did You Learn?"
+          subtitle="What you planned vs what you actually recorded. Only your logged sessions, completed steps and notes count — nothing is claimed automatically."
+        />
+        <div className="space-y-3 p-4">
+          {verifications.length === 0 ? (
+            <EmptyState
+              title="No goals to verify"
+              hint={q ? 'No goals match your search.' : 'Create a learning goal above, then log sessions against it.'}
+            />
+          ) : (
+            verifications.map(({ goal, v }) => (
+              <div key={goal.id} className="rounded-lg border border-line p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-ink">{goal.title}</p>
+                  <Badge tone={verificationTone(v.status)}>{v.status}</Badge>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg bg-surface p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Planned</p>
+                    <p className="mt-1 text-sm text-ink-secondary">
+                      <span className="font-medium text-ink">Wanted to learn: </span>
+                      {v.wantToLearn}
+                    </p>
+                    {v.plannedSteps.length === 0 ? (
+                      <p className="mt-1 text-sm text-ink-muted">
+                        No roadmap steps linked yet. Link a roadmap step when you log a session or note to measure progress.
+                      </p>
+                    ) : (
+                      <ul className="mt-1.5 space-y-1">
+                        {v.plannedSteps.slice(0, 8).map((s) => (
+                          <li key={`${s.roadmapId}:${s.stepId}`} className="flex items-center gap-1.5 text-sm text-ink-secondary">
+                            <span aria-hidden>{s.status === 'completed' ? '✓' : s.status === 'in_progress' ? '◐' : '○'}</span>
+                            <span className="min-w-0 flex-1 truncate">
+                              {s.title} <span className="text-xs text-ink-muted">· {s.roadmapTitle}</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {v.targetDate ? (
+                      <p className="mt-1.5 text-xs text-ink-muted">Target date: {formatDate(v.targetDate)}</p>
+                    ) : (
+                      <p className="mt-1.5 text-xs text-ink-muted">No target date set.</p>
+                    )}
+                  </div>
+                  <div className="rounded-lg bg-surface p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Actual (recorded)</p>
+                    {v.sessions.length === 0 && v.notesCount === 0 ? (
+                      <p className="mt-1 text-sm text-ink-muted">Nothing recorded yet.</p>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-sm text-ink-secondary">
+                          {v.sessions.length} session{v.sessions.length === 1 ? '' : 's'} · {v.completedSteps.length} completed step{v.completedSteps.length === 1 ? '' : 's'} · {v.notesCount} note{v.notesCount === 1 ? '' : 's'} · {v.minutes} min
+                        </p>
+                        {v.learned.length > 0 && (
+                          <ul className="mt-1.5 space-y-1">
+                            {v.learned.map((l, i) => (
+                              <li key={`${l.date}-${i}`} className="text-sm text-ink-secondary">
+                                “{l.title}” <span className="text-xs text-ink-muted">· {formatDate(l.date)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-3 rounded-lg border border-line p-3">
+                  <p className="text-sm text-ink">
+                    <span className="font-medium">You planned to learn: </span>
+                    <span className="text-ink-secondary">“{v.wantToLearn}”</span>
+                  </p>
+                  <p className="mt-1 text-sm text-ink">
+                    <span className="font-medium">You actually learned: </span>
+                    {v.learned.length === 0 ? (
+                      <span className="text-ink-muted">Nothing recorded yet.</span>
+                    ) : (
+                      <span className="text-ink-secondary">“{v.learned.map((l) => l.title).join('” · “')}”</span>
+                    )}
+                  </p>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <p className="text-sm text-ink">
+                      <span className="font-medium">Progress: </span>
+                      {v.progress === null ? (
+                        <span className="text-ink-muted">— (link roadmap steps to measure)</span>
+                      ) : (
+                        <span className="font-semibold">{v.progress}%</span>
+                      )}
+                    </p>
+                    {v.progress !== null && (
+                      <span className="text-xs text-ink-muted">
+                        {v.completedSteps.length}/{v.plannedSteps.length} steps
+                      </span>
+                    )}
+                  </div>
+                  {v.progress !== null && (
+                    <div className="mt-1.5">
+                      <ProgressBar value={v.progress} tone={v.progress === 100 ? 'success' : 'primary'} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
+      {/* Weekly review — saved into history */}
+      <Card>
+        <CardHeader
+          title="Weekly review"
+          subtitle="One review per week, saved into your history. Answer honestly — only what you recorded counts."
+        />
+        <div className="p-4">
+          <form onSubmit={submitReview} className="grid gap-3 rounded-lg bg-surface p-3">
+            <div className="grid gap-3 sm:grid-cols-[200px_1fr] sm:items-end">
+              <div>
+                <Label>Week</Label>
+                <Input
+                  type="week"
+                  value={reviewWeek}
+                  onChange={(e) => setReviewWeek(e.target.value)}
+                />
+              </div>
+              {editingReviewWeek && (
+                <p className="text-xs text-ink-muted">
+                  Editing {formatWeekKey(editingReviewWeek)}.{' '}
+                  <button type="button" onClick={resetReviewForm} className="font-medium text-primary-600 hover:underline">
+                    Start new instead
+                  </button>
+                </p>
+              )}
+            </div>
+            <div>
+              <Label>What did I actually learn this week?</Label>
+              <Textarea rows={2} placeholder="e.g. Finished flexbox basics, built a navbar" value={reviewLearned} onChange={(e) => setReviewLearned(e.target.value)} />
+            </div>
+            <div>
+              <Label>What did I fail to complete?</Label>
+              <Textarea rows={2} placeholder="e.g. Didn't finish the grid tutorial" value={reviewMissed} onChange={(e) => setReviewMissed(e.target.value)} />
+            </div>
+            <div>
+              <Label>What should I focus on next week?</Label>
+              <Textarea rows={2} placeholder="e.g. CSS grid + one small project" value={reviewFocus} onChange={(e) => setReviewFocus(e.target.value)} />
+            </div>
+            {reviewError && <p className="text-xs text-danger">{reviewError}</p>}
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1">
+                {editingReviewWeek ? `Update ${formatWeekKey(editingReviewWeek)}` : 'Save weekly review'}
+              </Button>
+              {editingReviewWeek && (
+                <Button variant="secondary" onClick={resetReviewForm}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </form>
+          <div className="mt-3 space-y-2">
+            {sortedReviews.length === 0 ? (
+              <EmptyState title="No reviews yet" hint="Answer the three questions above to save your first weekly review." />
+            ) : (
+              sortedReviews.map((r) => (
+                <div key={r.weekKey} className="rounded-lg border border-line p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-semibold text-ink">{formatWeekKey(r.weekKey)}</p>
+                    <div className="flex shrink-0 gap-1">
+                      <button onClick={() => startEditReview(r.weekKey)} className="rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Delete review for ${formatWeekKey(r.weekKey)}?`)) {
+                            deleteWeeklyReview(r.weekKey);
+                            if (editingReviewWeek === r.weekKey) resetReviewForm();
+                          }
+                        }}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-danger"
+                        aria-label={`Delete review for ${r.weekKey}`}
+                      >
+                        <IconTrash />
+                      </button>
+                    </div>
+                  </div>
+                  {r.learned && <p className="mt-1 text-sm text-ink-secondary"><span className="font-medium text-ink">Learned: </span>{r.learned}</p>}
+                  {r.missed && <p className="mt-1 text-sm text-ink-secondary"><span className="font-medium text-ink">Missed: </span>{r.missed}</p>}
+                  {r.focusNext && <p className="mt-1 text-sm text-ink-secondary"><span className="font-medium text-ink">Next focus: </span>{r.focusNext}</p>}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </Card>
 

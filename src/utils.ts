@@ -228,6 +228,32 @@ export function last7Days(): string[] {
   return out;
 }
 
+/** ISO week key YYYY-Www for a yyyy-mm-dd date. */
+export function weekKeyFor(dateStr: string): string {
+  const d = parseDateOnly(dateStr);
+  // Thursday determines the ISO week-year.
+  const tmp = new Date(d);
+  const day = (tmp.getDay() + 6) % 7; // Mon=0..Sun=6
+  tmp.setDate(tmp.getDate() - day + 3);
+  const weekYear = tmp.getFullYear();
+  const jan4 = new Date(weekYear, 0, 4);
+  const janDay = (jan4.getDay() + 6) % 7;
+  const week1Mon = new Date(jan4);
+  week1Mon.setDate(jan4.getDate() - janDay);
+  const weekNo = Math.floor(Math.round((tmp.getTime() - week1Mon.getTime()) / 86400000) / 7) + 1;
+  return `${weekYear}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+export function currentWeekKey(): string {
+  return weekKeyFor(todayString());
+}
+
+export function formatWeekKey(weekKey: string): string {
+  const m = /^(\d{4})-W(\d{2})$/.exec(weekKey);
+  if (!m) return weekKey;
+  return `Week ${m[2]}, ${m[1]}`;
+}
+
 export interface GoalStats {
   /** linked minutes in the last 7 days */
   weekMinutes: number;
