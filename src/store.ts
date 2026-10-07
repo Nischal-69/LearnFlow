@@ -2,9 +2,12 @@ import { useMemo } from 'react';
 import type {
   CompletionEntry,
   CompletionKind,
+  Folder,
   Goal,
   GoalStatus,
   LearnFlowState,
+  Note,
+  NoteKind,
   Roadmap,
   RoadmapStep,
   RoadmapStepStatus,
@@ -21,7 +24,13 @@ const seedState: LearnFlowState = {
   goals: [],
   roadmaps: [],
   folders: [
-    { id: 'folder_getting_started', name: 'Getting started', createdAt: new Date().toISOString() },
+    {
+      id: 'folder_getting_started',
+      name: 'Getting started',
+      parentId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
   ],
   notes: [],
   completions: [],
@@ -95,6 +104,46 @@ function normalizeTask(raw: Task): Task {
     done,
     doneAt: done ? (raw.doneAt ?? raw.createdAt) : null,
   };
+}
+
+/** Fill defaults for folders saved before subfolders existed. */
+function normalizeFolder(raw: Folder): Folder {
+  const r = raw as Partial<Folder>;
+  return {
+    id: r.id ?? uid('folder'),
+    name: r.name ?? 'Untitled',
+    parentId: r.parentId ?? null,
+    createdAt: r.createdAt ?? new Date().toISOString(),
+    updatedAt: (r as { updatedAt?: string }).updatedAt ?? r.createdAt ?? new Date().toISOString(),
+  };
+}
+
+const VALID_NOTE_KINDS: NoteKind[] = ['note', 'summary', 'resource', 'link', 'topic'];
+
+/** Fill defaults for notes saved before kinds existed. */
+function normalizeNote(raw: Note): Note {
+  const r = raw as Partial<Note>;
+  const kind: NoteKind =
+    r.kind && (VALID_NOTE_KINDS as string[]).includes(r.kind)
+      ? r.kind
+      : r.url && r.url.trim()
+        ? 'resource'
+        : 'note';
+  return {
+    id: r.id ?? uid('note'),
+    folderId: r.folderId ?? '',
+    title: r.title ?? '',
+    url: (r.url ?? '').trim(),
+    content: r.content ?? '',
+    kind,
+    createdAt: r.createdAt ?? new Date().toISOString(),
+    updatedAt: (r as { updatedAt?: string }).updatedAt ?? r.createdAt ?? new Date().toISOString(),
+  };
+}
+
+/** A note counts as a resource when it links somewhere. */
+export function isResourceNote(n: Note): boolean {
+  return n.kind === 'resource' || n.kind === 'link' || (n.url.trim().length > 0);
 }
 
 /** Apply a status transition. Completing stamps doneAt; reopening clears it. */
@@ -227,17 +276,32 @@ export function roadmapProgress(roadmap: Roadmap): { done: number; total: number
 export function useLearnFlow() {
   const [stored, setStored] = useLocalStorage<LearnFlowState>(STORAGE_KEY, seedState);
 
-  // Migrate tasks/goals/roadmaps/history saved by older versions to the full shapes.
-  const state: LearnFlowState = useMemo(
-    () => ({
+  // Migrate tasks/goals/roadmaps/history/library saved by older versions to the full shapes.
+  const state: LearnFlowState = useMemo(() => {
+    const folders = (stored.folders ?? []).map(normalizeFolder);
+    const folderIds = new Set(folders.map((f) => f.id));
+    // One level only: a subfolder can never be a parent. Repair corrupt nests.
+    const parentIds = new Set(folders.filter((f) => f.parentId).map((f) => f.parentId as string));
+    const safeFolders = folders.map((f) =>
+      f.parentId && (!folderIds.has(f.parentId) || parentIds.has(f.id) || f.parentId === f.id)
+        ? { ...f, parentId: null }
+        : f,
+    );
+    const validIds = new Set(safeFolders.map((f) => f.id));
+    const fallbackId = safeFolders.find((f) => f.parentId === null)?.id ?? safeFolders[0]?.id ?? '';
+    const notes = (stored.notes ?? []).map(normalizeNote).map((n) =>
+      validIds.has(n.folderId) ? n : { ...n, folderId: fallbackId },
+    );
+    return {
       ...stored,
       tasks: stored.tasks.map(normalizeTask),
       goals: stored.goals.map(normalizeGoal),
       roadmaps: (stored.roadmaps ?? []).map(normalizeRoadmap),
+      folders: safeFolders,
+      notes,
       completions: (stored.completions ?? []).map(normalizeCompletion),
-    }),
-    [stored],
-  );
+    };
+  }, [stored]);
   const setState = setStored;
 
   // Streak source of truth: session-only learning days derived from
@@ -642,44 +706,150 @@ export function useLearnFlow() {
     setState((s) => ({ ...s, roadmaps: s.roadmaps.filter((r) => r.id !== id) }));
   }
 
-  // ---- Library ----
-  function addFolder(name: string) {
+  // ---- Library (Learning Library: folders + one-level subfolders + notes) ----
+  function touchFolder(ids: Set<string>, now: string) {
+    return (f: Folder): Folder => (ids.has(f.id) ? { ...normalizeFolder(f), updatedAt: now } : f);
+  }
+
+  function addFolder(name: string): string {
+    const trimmed = name.trim();
+    if (!trimmed) return '';
+    const now = new Date().toISOString();
+    const id = uid('folder');
     setState((s) => ({
       ...s,
-      folders: [...s.folders, { id: uid('folder'), name: name.trim(), createdAt: new Date().toISOString() }],
+      folders: [
+        ...s.folders.map(normalizeFolder),
+        { id, name: trimmed, parentId: null, createdAt: now, updatedAt: now },
+      ],
+    }));
+    return id;
+  }
+
+  /** One level only: parent must be a top-level folder. Returns '' when rejected. */
+  function addSubfolder(parentId: string, name: string): string {
+    const trimmed = name.trim();
+    if (!trimmed) return '';
+    const parent = state.folders.map(normalizeFolder).find((f) => f.id === parentId);
+    if (!parent || parent.parentId !== null) return '';
+    const now = new Date().toISOString();
+    const id = uid('folder');
+    setState((s) => ({
+      ...s,
+      folders: [
+        ...s.folders.map(normalizeFolder),
+        { id, name: trimmed, parentId, createdAt: now, updatedAt: now },
+      ].map(touchFolder(new Set([parentId]), now)),
+    }));
+    return id;
+  }
+
+  function renameFolder(id: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const now = new Date().toISOString();
+    setState((s) => ({
+      ...s,
+      folders: s.folders
+        .map(normalizeFolder)
+        .map((f) => (f.id === id ? { ...f, name: trimmed, updatedAt: now } : f)),
     }));
   }
 
   function deleteFolder(id: string) {
-    setState((s) => ({
-      ...s,
-      folders: s.folders.filter((f) => f.id !== id),
-      notes: s.notes.filter((n) => n.folderId !== id),
-    }));
+    setState((s) => {
+      const folders = s.folders.map(normalizeFolder);
+      const target = folders.find((f) => f.id === id);
+      if (!target) return s;
+      // Cascade: deleting a parent removes its subfolders; notes in all removed folders go too.
+      const doomed = new Set<string>([id]);
+      for (const f of folders) {
+        if (f.parentId === id) doomed.add(f.id);
+      }
+      return {
+        ...s,
+        folders: folders.filter((f) => !doomed.has(f.id)),
+        notes: s.notes.map(normalizeNote).filter((n) => !doomed.has(n.folderId)),
+      };
+    });
   }
 
-  function addNote(folderId: string, title: string, url: string, content: string) {
+  function addNote(folderId: string, title: string, url: string, content: string, kind?: NoteKind) {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return '';
     const now = new Date().toISOString();
+    const targetId = state.folders.some((f) => f.id === folderId)
+      ? folderId
+      : (state.folders.find((f) => !normalizeFolder(f).parentId)?.id ?? state.folders[0]?.id ?? '');
+    if (!targetId) return '';
+    const trimmedUrl = url.trim();
+    const resolvedKind: NoteKind =
+      kind ?? (trimmedUrl ? 'resource' : 'note');
+    const id = uid('note');
     setState((s) => ({
       ...s,
       notes: [
-        { id: uid('note'), folderId, title: title.trim(), url: url.trim(), content, createdAt: now, updatedAt: now },
-        ...s.notes,
+        {
+          id,
+          folderId: targetId,
+          title: trimmedTitle,
+          url: trimmedUrl,
+          content,
+          kind: resolvedKind,
+          createdAt: now,
+          updatedAt: now,
+        },
+        ...s.notes.map(normalizeNote),
       ],
+      folders: s.folders.map(normalizeFolder).map(touchFolder(new Set([targetId]), now)),
+    }));
+    return id;
+  }
+
+  function updateNote(
+    id: string,
+    patch: { title?: string; url?: string; content?: string; kind?: NoteKind; folderId?: string },
+  ) {
+    const now = new Date().toISOString();
+    let touchedFolder = '';
+    setState((s) => ({
+      ...s,
+      notes: s.notes.map(normalizeNote).map((n) => {
+        if (n.id !== id) return n;
+        const nextFolder = patch.folderId && s.folders.some((f) => f.id === patch.folderId) ? patch.folderId : n.folderId;
+        touchedFolder = nextFolder;
+        const nextTitle = patch.title !== undefined ? patch.title.trim() || n.title : n.title;
+        const nextUrl = patch.url !== undefined ? patch.url.trim() : n.url;
+        return {
+          ...n,
+          title: nextTitle,
+          url: nextUrl,
+          content: patch.content !== undefined ? patch.content : n.content,
+          kind: patch.kind ?? (patch.url !== undefined ? (nextUrl ? 'resource' : 'note') : n.kind),
+          folderId: nextFolder,
+          updatedAt: now,
+        };
+      }),
+      folders: s.folders.map(normalizeFolder).map(touchFolder(new Set([touchedFolder]), now)),
     }));
   }
 
-  function updateNote(id: string, patch: { title: string; url: string; content: string }) {
-    setState((s) => ({
-      ...s,
-      notes: s.notes.map((n) =>
-        n.id === id ? { ...n, ...patch, updatedAt: new Date().toISOString() } : n,
-      ),
-    }));
+  function moveNote(id: string, folderId: string) {
+    if (!state.folders.some((f) => f.id === folderId)) return;
+    updateNote(id, { folderId });
   }
 
   function deleteNote(id: string) {
-    setState((s) => ({ ...s, notes: s.notes.filter((n) => n.id !== id) }));
+    let folderId = '';
+    for (const n of state.notes) {
+      if (n.id === id) folderId = n.folderId;
+    }
+    const now = new Date().toISOString();
+    setState((s) => ({
+      ...s,
+      notes: s.notes.map(normalizeNote).filter((n) => n.id !== id),
+      folders: s.folders.map(normalizeFolder).map(touchFolder(new Set([folderId]), now)),
+    }));
   }
 
   // ---- Sessions / Learning Tracker ----
@@ -809,9 +979,12 @@ export function useLearnFlow() {
     updateStepResource,
     deleteRoadmap,
     addFolder,
+    addSubfolder,
+    renameFolder,
     deleteFolder,
     addNote,
     updateNote,
+    moveNote,
     deleteNote,
     logSession,
     logLearningSession,

@@ -63,8 +63,13 @@ export interface Roadmap {
 export interface Folder {
   id: string;
   name: string;
+  /** null = top-level folder, otherwise id of the parent (one level only) */
+  parentId: string | null;
   createdAt: string;
+  updatedAt: string;
 }
+
+export type NoteKind = 'note' | 'summary' | 'resource' | 'link' | 'topic';
 
 export interface Note {
   id: string;
@@ -72,6 +77,7 @@ export interface Note {
   title: string;
   url: string;
   content: string;
+  kind: NoteKind;
   createdAt: string;
   updatedAt: string;
 }
@@ -113,6 +119,7 @@ export type ViewKey =
   | 'roadmaps'
   | 'learning'
   | 'streaks'
+  | 'library'
   | 'folders'
   | 'notes'
   | 'resources'

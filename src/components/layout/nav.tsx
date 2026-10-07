@@ -36,6 +36,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Library',
     items: [
+      { key: 'library', label: 'Learning Library', icon: (c) => <IconFolder className={c} /> },
       { key: 'folders', label: 'My Folders', icon: (c) => <IconFolder className={c} /> },
       { key: 'notes', label: 'Learning Notes', icon: (c) => <IconNote className={c} /> },
       { key: 'resources', label: 'Resources', icon: (c) => <IconBookmark className={c} /> },
@@ -55,6 +56,7 @@ export const PAGE_META: Record<ViewKey, { title: string; subtitle: string }> = {
   roadmaps: { title: 'Roadmaps', subtitle: 'Break big topics into steps.' },
   learning: { title: 'Learning', subtitle: 'Outcomes you are working toward.' },
   streaks: { title: 'Streaks', subtitle: 'Build the streak, day by day.' },
+  library: { title: 'Learning Library', subtitle: 'Folders, notes, resources — organized.' },
   folders: { title: 'My Folders', subtitle: 'Organize notes by topic.' },
   notes: { title: 'Learning Notes', subtitle: 'Summaries and references.' },
   resources: { title: 'Resources', subtitle: 'Links worth revisiting.' },
