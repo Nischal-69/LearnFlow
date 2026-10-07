@@ -71,6 +71,8 @@ export interface Folder {
 
 export type NoteKind = 'note' | 'summary' | 'resource' | 'link' | 'topic';
 
+export type ResourceType = 'website' | 'youtube' | 'documentation' | 'course' | 'article' | 'other';
+
 export interface Note {
   id: string;
   folderId: string;
@@ -88,6 +90,8 @@ export interface Note {
   roadmapId: string | null;
   /** related roadmap step (optional, requires roadmapId) */
   roadmapStepId: string | null;
+  /** resource type, null when not a resource */
+  resourceType: ResourceType | null;
   createdAt: string;
   updatedAt: string;
 }

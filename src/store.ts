@@ -8,6 +8,7 @@ import type {
   LearnFlowState,
   Note,
   NoteKind,
+  ResourceType,
   Roadmap,
   RoadmapStep,
   RoadmapStepStatus,
@@ -138,6 +139,14 @@ export function normalizeTags(raw: unknown): string[] {
   return out;
 }
 
+const VALID_RESOURCE_TYPES: ResourceType[] = ['website', 'youtube', 'documentation', 'course', 'article', 'other'];
+
+export function normalizeResourceType(raw: unknown): ResourceType | null {
+  return typeof raw === 'string' && (VALID_RESOURCE_TYPES as string[]).includes(raw)
+    ? (raw as ResourceType)
+    : null;
+}
+
 /** Fill defaults for notes saved before kinds existed. */
 function normalizeNote(raw: Note): Note {
   const r = raw as Partial<Note> & { tags?: unknown };
@@ -148,11 +157,13 @@ function normalizeNote(raw: Note): Note {
         ? 'resource'
         : 'note';
   const roadmapId = typeof r.roadmapId === 'string' && r.roadmapId ? r.roadmapId : null;
+  const trimmedUrl = (r.url ?? '').trim();
+  const rawType = normalizeResourceType((r as { resourceType?: unknown }).resourceType);
   return {
     id: r.id ?? uid('note'),
     folderId: r.folderId ?? '',
     title: r.title ?? '',
-    url: (r.url ?? '').trim(),
+    url: trimmedUrl,
     content: r.content ?? '',
     kind,
     tags: normalizeTags(r.tags),
@@ -161,6 +172,7 @@ function normalizeNote(raw: Note): Note {
     roadmapId,
     roadmapStepId:
       roadmapId && typeof r.roadmapStepId === 'string' && r.roadmapStepId ? r.roadmapStepId : null,
+    resourceType: rawType ?? (trimmedUrl ? 'website' : null),
     createdAt: r.createdAt ?? new Date().toISOString(),
     updatedAt: (r as { updatedAt?: string }).updatedAt ?? r.createdAt ?? new Date().toISOString(),
   };
@@ -266,6 +278,7 @@ export interface NoteExtra {
   goalId?: string | null;
   roadmapId?: string | null;
   roadmapStepId?: string | null;
+  resourceType?: ResourceType | null;
 }
 
 export interface NotePatch {
@@ -278,6 +291,7 @@ export interface NotePatch {
   pinned?: boolean;
   goalId?: string | null;
   roadmapId?: string | null;
+  resourceType?: ResourceType | null;
   roadmapStepId?: string | null;
 }
 
@@ -841,6 +855,7 @@ export function useLearnFlow() {
     const goalId = extra?.goalId ? extra.goalId : null;
     const roadmapId = extra?.roadmapId ? extra.roadmapId : null;
     const id = uid('note');
+    const resourceType = normalizeResourceType(extra?.resourceType) ?? (trimmedUrl ? 'website' : null);
     setState((s) => ({
       ...s,
       notes: [
@@ -856,6 +871,7 @@ export function useLearnFlow() {
           goalId,
           roadmapId,
           roadmapStepId: roadmapId && extra?.roadmapStepId ? extra.roadmapStepId : null,
+          resourceType,
           createdAt: now,
           updatedAt: now,
         },
@@ -888,6 +904,14 @@ export function useLearnFlow() {
             : patch.roadmapId !== undefined
               ? null
               : n.roadmapStepId;
+        const nextResourceType =
+          patch.resourceType !== undefined
+            ? normalizeResourceType(patch.resourceType) ?? (nextUrl ? 'website' : null)
+            : patch.url !== undefined
+              ? nextUrl
+                ? (n.resourceType ?? 'website')
+                : null
+              : n.resourceType;
         return {
           ...n,
           title: nextTitle,
@@ -899,6 +923,7 @@ export function useLearnFlow() {
           goalId: patch.goalId !== undefined ? (patch.goalId || null) : n.goalId,
           roadmapId: nextRoadmapId,
           roadmapStepId: nextStepId,
+          resourceType: nextResourceType,
           folderId: nextFolder,
           updatedAt: now,
         };
