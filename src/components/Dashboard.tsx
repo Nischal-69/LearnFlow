@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { LearnFlowApi } from '../store';
+import { currentRoadmapStep, nextRoadmapStep } from '../store';
 import type { ViewKey } from '../types';
 import { formatDate, goalStats, todayString } from '../utils';
 import { Badge, Button, Card, CardHeader, EmptyState, Input, ProgressBar } from './ui';
@@ -71,14 +72,18 @@ export default function Dashboard({
     : null;
   const goalPct = mainGoalStats?.progress ?? 0;
 
-  // ---- 4. Current Roadmap (oldest with incomplete steps) ----
+  // ---- 4. Current Roadmap (oldest with incomplete steps, 3-state status) ----
+  const isIncomplete = (s: { status?: string; done?: boolean }) =>
+    (s.status ?? (s.done ? 'completed' : 'not_started')) !== 'completed';
   const activeRoadmap = [...state.roadmaps]
-    .filter((r) => r.steps.some((s) => !s.done))
+    .filter((r) => r.steps.some(isIncomplete))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-  const doneSteps = activeRoadmap ? activeRoadmap.steps.filter((s) => s.done) : [];
-  const incompleteSteps = activeRoadmap ? activeRoadmap.steps.filter((s) => !s.done) : [];
-  const currentStep = incompleteSteps[0];
-  const remainingCount = Math.max(0, incompleteSteps.length - 1);
+  const doneSteps = activeRoadmap ? activeRoadmap.steps.filter((s) => !isIncomplete(s)) : [];
+  const currentStep = activeRoadmap ? currentRoadmapStep(activeRoadmap) : null;
+  const nextStep = activeRoadmap ? nextRoadmapStep(activeRoadmap) : null;
+  const remainingCount = activeRoadmap
+    ? activeRoadmap.steps.filter(isIncomplete).length - (currentStep ? 1 : 0)
+    : 0;
 
   // ---- 6. Continue Learning (folders by latest note activity) ----
   const folderActivity = state.folders
@@ -318,6 +323,9 @@ export default function Dashboard({
                       Mark done
                     </button>
                   </div>
+                  {nextStep && (
+                    <p className="mt-1.5 text-xs text-primary-700">Next: {nextStep.title}</p>
+                  )}
                 </div>
                 {doneSteps.length > 0 && (
                   <div className="mt-2 space-y-1">

@@ -30,11 +30,26 @@ export interface Goal {
   createdAt: string;
 }
 
+export type RoadmapStepStatus = 'not_started' | 'in_progress' | 'completed';
+
+export interface RoadmapResource {
+  id: string;
+  label: string;
+  url: string;
+}
+
 export interface RoadmapStep {
   id: string;
   title: string;
-  done: boolean;
-  resource: string; // optional URL or note
+  description: string;
+  estimatedMinutes: number; // 0 = unset
+  resources: RoadmapResource[];
+  status: RoadmapStepStatus;
+  notes: string;
+  /** legacy: completed ⇔ status === 'completed' (kept for migration) */
+  done?: boolean;
+  /** legacy single resource string (migrated into resources/notes) */
+  resource?: string;
 }
 
 export interface Roadmap {

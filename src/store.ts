@@ -1,5 +1,15 @@
 import { useMemo } from 'react';
-import type { CompletionEntry, Goal, GoalStatus, LearnFlowState, Task, TaskStatus } from './types';
+import type {
+  CompletionEntry,
+  Goal,
+  GoalStatus,
+  LearnFlowState,
+  Roadmap,
+  RoadmapStep,
+  RoadmapStepStatus,
+  Task,
+  TaskStatus,
+} from './types';
 import { useLocalStorage } from './hooks';
 import { computeStreak, todayString, uid } from './utils';
 
@@ -81,15 +91,113 @@ function applyStatus(t: Task, status: TaskStatus): { task: Task; didComplete: bo
   };
 }
 
+function looksLikeUrl(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  return v.startsWith('http://') || v.startsWith('https://') || v.startsWith('www.');
+}
+
+function toDisplayUrl(value: string): string {
+  const v = value.trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^www\./i.test(v)) return `https://${v}`;
+  return v;
+}
+
+/** Migrate steps saved before the rich roadmap model existed. */
+export function normalizeRoadmapStep(raw: RoadmapStep): RoadmapStep {
+  const r = raw as RoadmapStep & { done?: boolean; resource?: string };
+  const status: RoadmapStepStatus =
+    r.status ?? (r.done ? 'completed' : 'not_started');
+  let resources = Array.isArray(r.resources) ? r.resources : [];
+  let notes = r.notes ?? '';
+  const legacyResource = (r.resource ?? '').trim();
+  if (legacyResource && resources.length === 0) {
+    if (looksLikeUrl(legacyResource)) {
+      resources = [{ id: uid('res'), label: legacyResource, url: toDisplayUrl(legacyResource) }];
+    } else if (!notes) {
+      notes = legacyResource;
+    } else {
+      resources = [{ id: uid('res'), label: legacyResource, url: '' }];
+    }
+  }
+  return {
+    id: r.id,
+    title: r.title ?? '',
+    description: (r as { description?: string }).description ?? '',
+    estimatedMinutes: Math.max(0, Math.floor((r as { estimatedMinutes?: number }).estimatedMinutes ?? 0) || 0),
+    resources,
+    status,
+    notes,
+    done: status === 'completed',
+  };
+}
+
+function normalizeRoadmap(raw: Roadmap): Roadmap {
+  return {
+    ...raw,
+    description: (raw as { description?: string }).description ?? '',
+    steps: Array.isArray(raw.steps) ? raw.steps.map(normalizeRoadmapStep) : [],
+  };
+}
+
+export interface RoadmapStepPatch {
+  title?: string;
+  description?: string;
+  estimatedMinutes?: number;
+  status?: RoadmapStepStatus;
+  notes?: string;
+}
+
+export type RoadmapStepSeed = string | { title: string; description?: string; estimatedMinutes?: number };
+
+function makeStep(
+  title: string,
+  extra?: { description?: string; estimatedMinutes?: number },
+): RoadmapStep {
+  return {
+    id: uid('step'),
+    title: title.trim(),
+    description: (extra?.description ?? '').trim(),
+    estimatedMinutes: Math.max(0, Math.floor(extra?.estimatedMinutes ?? 0) || 0),
+    resources: [],
+    status: 'not_started',
+    notes: '',
+    done: false,
+  };
+}
+
+/** First in_progress, else first not_started. Null when everything completed. */
+export function currentRoadmapStep(roadmap: Roadmap): RoadmapStep | null {
+  const steps = roadmap.steps.map(normalizeRoadmapStep);
+  return steps.find((s) => s.status === 'in_progress') ?? steps.find((s) => s.status !== 'completed') ?? null;
+}
+
+/** Step immediately after the current one. Null when current is last or none. */
+export function nextRoadmapStep(roadmap: Roadmap): RoadmapStep | null {
+  const steps = roadmap.steps.map(normalizeRoadmapStep);
+  const current = currentRoadmapStep(roadmap);
+  if (!current) return null;
+  const idx = steps.findIndex((s) => s.id === current.id);
+  return idx >= 0 && idx + 1 < steps.length ? steps[idx + 1] : null;
+}
+
+export function roadmapProgress(roadmap: Roadmap): { done: number; total: number; pct: number } {
+  const steps = roadmap.steps.map(normalizeRoadmapStep);
+  const done = steps.filter((s) => s.status === 'completed').length;
+  const total = steps.length;
+  return { done, total, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
+}
+
 export function useLearnFlow() {
   const [stored, setStored] = useLocalStorage<LearnFlowState>(STORAGE_KEY, seedState);
 
-  // Migrate tasks/goals saved by older versions to the full shapes.
+  // Migrate tasks/goals/roadmaps saved by older versions to the full shapes.
   const state: LearnFlowState = useMemo(
     () => ({
       ...stored,
       tasks: stored.tasks.map(normalizeTask),
       goals: stored.goals.map(normalizeGoal),
+      roadmaps: (stored.roadmaps ?? []).map(normalizeRoadmap),
       completions: stored.completions.map((c) => ({ ...c, goalId: c.goalId ?? null })),
     }),
     [stored],
@@ -279,7 +387,8 @@ export function useLearnFlow() {
   }
 
   // ---- Roadmaps ----
-  function addRoadmap(title: string, description: string, stepTitles: string[]) {
+  function addRoadmap(title: string, description: string, stepTitles: RoadmapStepSeed[]) {
+    if (!title.trim()) return;
     setState((s) => ({
       ...s,
       roadmaps: [
@@ -289,28 +398,53 @@ export function useLearnFlow() {
           description: description.trim(),
           createdAt: new Date().toISOString(),
           steps: stepTitles
-            .map((t) => t.trim())
-            .filter(Boolean)
-            .map((t) => ({ id: uid('step'), title: t, done: false, resource: '' })),
+            .map((t) =>
+              typeof t === 'string'
+                ? t.trim()
+                  ? makeStep(t)
+                  : null
+                : t.title.trim()
+                  ? makeStep(t.title, { description: t.description, estimatedMinutes: t.estimatedMinutes })
+                  : null,
+            )
+            .filter((x): x is RoadmapStep => x !== null),
         },
         ...s.roadmaps,
       ],
     }));
   }
 
-  function addRoadmapStep(roadmapId: string, title: string) {
+  function updateRoadmap(id: string, patch: { title?: string; description?: string }) {
     setState((s) => ({
       ...s,
       roadmaps: s.roadmaps.map((r) =>
-        r.id !== roadmapId
+        r.id !== id
           ? r
-          : { ...r, steps: [...r.steps, { id: uid('step'), title: title.trim(), done: false, resource: '' }] },
+          : {
+              ...r,
+              ...(patch.title !== undefined ? { title: patch.title.trim() || r.title } : {}),
+              ...(patch.description !== undefined ? { description: patch.description } : {}),
+            },
       ),
     }));
   }
 
-  function toggleRoadmapStep(roadmapId: string, stepId: string) {
-    let stepTitle = '';
+  function addRoadmapStep(
+    roadmapId: string,
+    title: string,
+    extra?: { description?: string; estimatedMinutes?: number },
+  ) {
+    if (!title.trim()) return;
+    setState((s) => ({
+      ...s,
+      roadmaps: s.roadmaps.map((r) =>
+        r.id !== roadmapId ? r : { ...r, steps: [...r.steps.map(normalizeRoadmapStep), makeStep(title, extra)] },
+      ),
+    }));
+  }
+
+  function updateRoadmapStep(roadmapId: string, stepId: string, patch: RoadmapStepPatch) {
+    let completedTitle = '';
     let roadmapTitle = '';
     let didComplete = false;
     setState((s) => ({
@@ -320,30 +454,156 @@ export function useLearnFlow() {
         roadmapTitle = r.title;
         return {
           ...r,
-          steps: r.steps.map((st) => {
+          steps: r.steps.map(normalizeRoadmapStep).map((st) => {
             if (st.id !== stepId) return st;
-            const done = !st.done;
-            if (done) {
+            const next: RoadmapStep = {
+              ...st,
+              ...(patch.title !== undefined ? { title: patch.title.trim() || st.title } : {}),
+              ...(patch.description !== undefined ? { description: patch.description } : {}),
+              ...(patch.estimatedMinutes !== undefined
+                ? { estimatedMinutes: Math.max(0, Math.floor(patch.estimatedMinutes) || 0) }
+                : {}),
+              ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+              ...(patch.status !== undefined ? { status: patch.status } : {}),
+            };
+            next.done = next.status === 'completed';
+            if (next.status === 'completed' && st.status !== 'completed') {
               didComplete = true;
-              stepTitle = st.title;
+              completedTitle = next.title;
             }
-            return { ...st, done };
+            return next;
           }),
         };
       }),
     }));
-    if (didComplete) logCompletion({ kind: 'roadmap-step', title: `${roadmapTitle} — ${stepTitle}`, minutes: 0 });
+    if (didComplete)
+      logCompletion({ kind: 'roadmap-step', title: `${roadmapTitle} — ${completedTitle}`, minutes: 0 });
   }
 
-  function updateStepResource(roadmapId: string, stepId: string, resource: string) {
+  function setRoadmapStepStatus(roadmapId: string, stepId: string, status: RoadmapStepStatus) {
+    updateRoadmapStep(roadmapId, stepId, { status });
+  }
+
+  function toggleRoadmapStep(roadmapId: string, stepId: string) {
+    let target: RoadmapStepStatus = 'completed';
+    for (const r of state.roadmaps) {
+      if (r.id !== roadmapId) continue;
+      const st = r.steps.map(normalizeRoadmapStep).find((x) => x.id === stepId);
+      if (st) target = st.status === 'completed' ? 'not_started' : 'completed';
+    }
+    updateRoadmapStep(roadmapId, stepId, { status: target });
+  }
+
+  function deleteRoadmapStep(roadmapId: string, stepId: string) {
     setState((s) => ({
       ...s,
       roadmaps: s.roadmaps.map((r) =>
         r.id !== roadmapId
           ? r
-          : { ...r, steps: r.steps.map((st) => (st.id === stepId ? { ...st, resource } : st)) },
+          : { ...r, steps: r.steps.map(normalizeRoadmapStep).filter((st) => st.id !== stepId) },
       ),
     }));
+  }
+
+  function moveRoadmapStep(roadmapId: string, stepId: string, dir: 'up' | 'down') {
+    setState((s) => ({
+      ...s,
+      roadmaps: s.roadmaps.map((r) => {
+        if (r.id !== roadmapId) return r;
+        const steps = r.steps.map(normalizeRoadmapStep);
+        const idx = steps.findIndex((st) => st.id === stepId);
+        if (idx < 0) return r;
+        const j = dir === 'up' ? idx - 1 : idx + 1;
+        if (j < 0 || j >= steps.length) return r;
+        const next = [...steps];
+        [next[idx], next[j]] = [next[j], next[idx]];
+        return { ...r, steps: next };
+      }),
+    }));
+  }
+
+  function addStepResource(roadmapId: string, stepId: string, label: string, url: string) {
+    const l = label.trim() || url.trim();
+    const u = url.trim() ? toDisplayUrl(url.trim()) : '';
+    if (!l && !u) return;
+    setState((s) => ({
+      ...s,
+      roadmaps: s.roadmaps.map((r) =>
+        r.id !== roadmapId
+          ? r
+          : {
+              ...r,
+              steps: r.steps.map(normalizeRoadmapStep).map((st) =>
+                st.id !== stepId
+                  ? st
+                  : { ...st, resources: [...st.resources, { id: uid('res'), label: l || u, url: u }] },
+              ),
+            },
+      ),
+    }));
+  }
+
+  function removeStepResource(roadmapId: string, stepId: string, resourceId: string) {
+    setState((s) => ({
+      ...s,
+      roadmaps: s.roadmaps.map((r) =>
+        r.id !== roadmapId
+          ? r
+          : {
+              ...r,
+              steps: r.steps.map(normalizeRoadmapStep).map((st) =>
+                st.id !== stepId
+                  ? st
+                  : { ...st, resources: st.resources.filter((x) => x.id !== resourceId) },
+              ),
+            },
+      ),
+    }));
+  }
+
+  function updateStepResource(roadmapId: string, stepId: string, resource: string) {
+    // Legacy single-field shim: URL → first resource, plain text → notes.
+    const value = resource.trim();
+    if (!value) {
+      setState((s) => ({
+        ...s,
+        roadmaps: s.roadmaps.map((r) =>
+          r.id !== roadmapId
+            ? r
+            : {
+                ...r,
+                steps: r.steps.map(normalizeRoadmapStep).map((st) =>
+                  st.id !== stepId ? st : { ...st, resources: [], resource: '' } as RoadmapStep,
+                ),
+              },
+        ),
+      }));
+      return;
+    }
+    if (looksLikeUrl(value)) {
+      setState((s) => ({
+        ...s,
+        roadmaps: s.roadmaps.map((r) =>
+          r.id !== roadmapId
+            ? r
+            : {
+                ...r,
+                steps: r.steps.map(normalizeRoadmapStep).map((st) => {
+                  if (st.id !== stepId) return st;
+                  const first = st.resources[0];
+                  return {
+                    ...st,
+                    resources: first
+                      ? [{ ...first, label: value, url: toDisplayUrl(value) }]
+                      : [{ id: uid('res'), label: value, url: toDisplayUrl(value) }],
+                  };
+                }),
+              },
+        ),
+      }));
+    } else {
+      updateRoadmapStep(roadmapId, stepId, { notes: value });
+    }
   }
 
   function deleteRoadmap(id: string) {
@@ -423,8 +683,15 @@ export function useLearnFlow() {
     setGoalStatus,
     deleteGoal,
     addRoadmap,
+    updateRoadmap,
     addRoadmapStep,
+    updateRoadmapStep,
+    setRoadmapStepStatus,
     toggleRoadmapStep,
+    deleteRoadmapStep,
+    moveRoadmapStep,
+    addStepResource,
+    removeStepResource,
     updateStepResource,
     deleteRoadmap,
     addFolder,
