@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import type { LearnFlowApi } from '../store';
-import type { Goal, GoalStatus } from '../types';
-import { formatDate, goalStats } from '../utils';
+import { useMemo, useState } from 'react';
+import type { LearnFlowApi, LearningSessionInput } from '../store';
+import type { CompletionEntry, Goal, GoalStatus } from '../types';
+import { formatDate, goalStats, todayString } from '../utils';
 import { Badge, Button, Card, CardHeader, EmptyState, Input, Label, Modal, ProgressBar, Textarea } from './ui';
 import { IconCalendar, IconFlame, IconPlus, IconTrash } from './icons';
 
@@ -48,16 +48,139 @@ function formFromGoal(g: Goal): GoalForm {
   };
 }
 
+interface LogForm {
+  title: string;
+  goalId: string;
+  roadmapId: string;
+  stepId: string;
+  date: string;
+  minutes: string;
+  understood: string;
+  struggled: string;
+  next: string;
+  notes: string;
+  markStepComplete: boolean;
+}
+
+function blankLogForm(defaultGoalId = ''): LogForm {
+  return {
+    title: '',
+    goalId: defaultGoalId,
+    roadmapId: '',
+    stepId: '',
+    date: todayString(),
+    minutes: '45',
+    understood: '',
+    struggled: '',
+    next: '',
+    notes: '',
+    markStepComplete: false,
+  };
+}
+
+function formFromSession(s: CompletionEntry): LogForm {
+  return {
+    title: s.title,
+    goalId: s.goalId ?? '',
+    roadmapId: s.roadmapId ?? '',
+    stepId: s.roadmapStepId ?? '',
+    date: s.date,
+    minutes: String(s.minutes),
+    understood: s.understood,
+    struggled: s.struggled,
+    next: s.next,
+    notes: s.notes,
+    markStepComplete: false,
+  };
+}
+
+function Reflection({ label, value }: { label: string; value: string }) {
+  if (!value.trim()) return null;
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink-secondary">{value}</p>
+    </div>
+  );
+}
+
 export default function Learning({ api, search }: { api: LearnFlowApi; search: string }) {
-  const { state, addGoal, updateGoal, deleteGoal, logSession } = api;
+  const { state, addGoal, updateGoal, deleteGoal, logLearningSession, updateLearningSession, deleteCompletion } = api;
   const [filter, setFilter] = useState<Filter>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
   const [form, setForm] = useState<GoalForm>(blankGoalForm);
-  const [sessionGoal, setSessionGoal] = useState<Goal | null>(null);
-  const [sessionTitle, setSessionTitle] = useState('');
-  const [sessionMinutes, setSessionMinutes] = useState('25');
+  const [logOpen, setLogOpen] = useState(false);
+  const [editingSession, setEditingSession] = useState<CompletionEntry | null>(null);
+  const [logForm, setLogForm] = useState<LogForm>(blankLogForm());
   const q = search.trim().toLowerCase();
+
+  const goalById = useMemo(() => new Map(state.goals.map((g) => [g.id, g])), [state.goals]);
+  const roadmapById = useMemo(() => new Map(state.roadmaps.map((r) => [r.id, r])), [state.roadmaps]);
+
+  const sessions = useMemo(
+    () => state.completions.filter((c) => c.kind === 'session').sort((a, b) => `${b.date} ${b.createdAt}`.localeCompare(`${a.date} ${a.createdAt}`)),
+    [state.completions],
+  );
+  const today = todayString();
+  const sessionsToday = sessions.filter((s) => s.date === today);
+  const minutesToday = sessionsToday.reduce((a, s) => a + (s.minutes || 0), 0);
+
+  const activeGoals = state.goals.filter((g) => g.status === 'active');
+  const stepsForRoadmap = (roadmapId: string) =>
+    roadmapById.get(roadmapId)?.steps ?? [];
+
+  function openLog(goalId = '', session?: CompletionEntry) {
+    if (session) {
+      setEditingSession(session);
+      setLogForm(formFromSession(session));
+    } else {
+      setEditingSession(null);
+      const fallback = goalId || (activeGoals[0]?.id ?? '');
+      setLogForm(blankLogForm(fallback));
+    }
+    setLogOpen(true);
+  }
+
+  function saveLog(e: React.FormEvent) {
+    e.preventDefault();
+    const minutes = Math.max(0, parseInt(logForm.minutes, 10) || 0);
+    if (!logForm.title.trim() || minutes < 1) return;
+    if (editingSession) {
+      const patch: Partial<Omit<LearningSessionInput, 'markStepComplete'>> = {
+        title: logForm.title,
+        minutes,
+        date: logForm.date,
+        goalId: logForm.goalId || null,
+        roadmapId: logForm.roadmapId || null,
+        roadmapStepId: logForm.stepId || null,
+        understood: logForm.understood,
+        struggled: logForm.struggled,
+        next: logForm.next,
+        notes: logForm.notes,
+      };
+      // Clear stale step link when roadmap changes/unset.
+      if (!logForm.roadmapId) patch.roadmapStepId = null;
+      updateLearningSession(editingSession.id, patch);
+    } else {
+      const id = logLearningSession({
+        title: logForm.title,
+        minutes,
+        date: logForm.date,
+        goalId: logForm.goalId || null,
+        roadmapId: logForm.roadmapId || null,
+        roadmapStepId: logForm.stepId || null,
+        understood: logForm.understood,
+        struggled: logForm.struggled,
+        next: logForm.next,
+        notes: logForm.notes,
+        markStepComplete: logForm.markStepComplete,
+      });
+      if (!id) return;
+    }
+    setLogOpen(false);
+    setEditingSession(null);
+  }
 
   function openCreate() {
     setEditing(null);
@@ -87,23 +210,119 @@ export default function Learning({ api, search }: { api: LearnFlowApi; search: s
     setModalOpen(false);
   }
 
-  function saveSession(e: React.FormEvent) {
-    e.preventDefault();
-    if (!sessionGoal) return;
-    logSession(sessionTitle || sessionGoal.title, Number(sessionMinutes) || 0, undefined, sessionGoal.id);
-    setSessionGoal(null);
-    setSessionTitle('');
-    setSessionMinutes('25');
-  }
-
-  const visible = state.goals
+  const visibleGoals = state.goals
     .filter((g) => (filter === 'all' ? true : g.status === filter))
     .filter((g) =>
       q ? (g.title + ' ' + g.description + ' ' + g.motivation).toLowerCase().includes(q) : true,
     );
 
+  const visibleSessions = sessions.filter((s) =>
+    q
+      ? `${s.title} ${s.understood} ${s.struggled} ${s.next} ${s.notes}`.toLowerCase().includes(q)
+      : true,
+  );
+
+  const logValid = logForm.title.trim().length > 0 && (parseInt(logForm.minutes, 10) || 0) >= 1;
+  const selectedSteps = logForm.roadmapId ? stepsForRoadmap(logForm.roadmapId) : [];
+
   return (
     <>
+      {/* Learning Tracker */}
+      <Card>
+        <CardHeader
+          title="Learning Tracker"
+          subtitle={
+            sessionsToday.length === 0
+              ? 'Nothing logged today yet — a day only counts when you record real learning.'
+              : `${sessionsToday.length} session${sessionsToday.length === 1 ? '' : 's'} today · ${minutesToday} min`
+          }
+          action={
+            <Button onClick={() => openLog()}>
+              <IconFlame className="h-4 w-4" /> Log Learning
+            </Button>
+          }
+        />
+        <div className="grid gap-3 p-4 text-center sm:grid-cols-3">
+          <div className="rounded-lg bg-surface p-3">
+            <p className="text-lg font-bold text-ink">{sessionsToday.length}</p>
+            <p className="text-xs text-ink-muted">Sessions today</p>
+          </div>
+          <div className="rounded-lg bg-surface p-3">
+            <p className="text-lg font-bold text-ink">{minutesToday}<span className="text-xs font-medium text-ink-muted"> min</span></p>
+            <p className="text-xs text-ink-muted">Minutes today</p>
+          </div>
+          <div className="rounded-lg bg-surface p-3">
+            <p className="text-lg font-bold text-ink">{sessions.length}</p>
+            <p className="text-xs text-ink-muted">Total sessions</p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Learning log */}
+      <Card>
+        <CardHeader
+          title="Learning log"
+          subtitle="What you actually learned — with reflection, goal and roadmap links."
+        />
+        <div className="space-y-3 p-4">
+          {visibleSessions.length === 0 ? (
+            <EmptyState
+              title="No learning logged yet"
+              hint='Example: "Learned keyframes in After Effects" — 45 minutes.'
+            />
+          ) : (
+            visibleSessions.slice(0, 20).map((s) => {
+              const goal = s.goalId ? goalById.get(s.goalId) : undefined;
+              const roadmap = s.roadmapId ? roadmapById.get(s.roadmapId) : undefined;
+              const step = roadmap?.steps.find((x) => x.id === s.roadmapStepId);
+              return (
+                <div key={s.id} className="rounded-lg border border-line p-3">
+                  <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-ink">{s.title}</p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted">
+                        <span className="inline-flex items-center gap-1">
+                          <IconCalendar className="h-3.5 w-3.5" />{formatDate(s.date)}
+                        </span>
+                        <span>· {s.minutes} min</span>
+                        {goal && <span>· {goal.title}</span>}
+                        {roadmap && step && <span>· {roadmap.title} — {step.title}</span>}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => openLog('', s)}
+                      className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteCompletion(s.id)}
+                      className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-danger"
+                      aria-label={`Delete session ${s.title}`}
+                    >
+                      <IconTrash />
+                    </button>
+                  </div>
+                  {(s.understood || s.struggled || s.next || s.notes) && (
+                    <div className="mt-2 grid gap-2 border-t border-line pt-2 sm:grid-cols-2">
+                      <Reflection label="Understood" value={s.understood} />
+                      <Reflection label="Struggled with" value={s.struggled} />
+                      <Reflection label="Learn next" value={s.next} />
+                      <Reflection label="Notes" value={s.notes} />
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+          {visibleSessions.length > 20 && (
+            <p className="text-center text-xs text-ink-muted">
+              Showing latest 20 of {visibleSessions.length}. See Streaks → History for the full log.
+            </p>
+          )}
+        </div>
+      </Card>
+
       <Card>
         <CardHeader
           title="Learning goals"
@@ -132,7 +351,7 @@ export default function Learning({ api, search }: { api: LearnFlowApi; search: s
           </div>
         </div>
         <div className="grid gap-3 p-4 md:grid-cols-2">
-          {visible.length === 0 ? (
+          {visibleGoals.length === 0 ? (
             <div className="md:col-span-2">
               <EmptyState
                 title="No goals here"
@@ -140,7 +359,7 @@ export default function Learning({ api, search }: { api: LearnFlowApi; search: s
               />
             </div>
           ) : (
-            visible.map((g) => {
+            visibleGoals.map((g) => {
               const stats = goalStats(state.completions, g.id, g.weeklyTargetMinutes);
               const dimmed = g.status !== 'active';
               return (
@@ -193,8 +412,8 @@ export default function Learning({ api, search }: { api: LearnFlowApi; search: s
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     {g.status === 'active' && (
-                      <Button onClick={() => { setSessionGoal(g); setSessionTitle(''); setSessionMinutes('25'); }} className="flex-1">
-                        Start Learning
+                      <Button onClick={() => openLog(g.id)} className="flex-1">
+                        Log Learning
                       </Button>
                     )}
                     {g.status === 'active' && (
@@ -313,36 +532,139 @@ export default function Learning({ api, search }: { api: LearnFlowApi; search: s
         </Modal>
       )}
 
-      {sessionGoal && (
-        <Modal title={`Learn: ${sessionGoal.title}`} onClose={() => setSessionGoal(null)}>
-          <form onSubmit={saveSession} className="grid gap-3">
+      {logOpen && (
+        <Modal title={editingSession ? 'Edit learning session' : 'Log Learning'} onClose={() => { setLogOpen(false); setEditingSession(null); }}>
+          <form onSubmit={saveLog} className="grid max-h-[70vh] gap-3 overflow-y-auto pr-1">
             <div>
               <Label>What did you learn?</Label>
               <Input
                 autoFocus
-                placeholder="e.g. Keyframes and easing"
-                value={sessionTitle}
-                onChange={(e) => setSessionTitle(e.target.value)}
+                placeholder="e.g. Learned keyframes in After Effects"
+                value={logForm.title}
+                onChange={(e) => setLogForm({ ...logForm, title: e.target.value })}
               />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Learning goal (optional)</Label>
+                <select
+                  value={logForm.goalId}
+                  onChange={(e) => setLogForm({ ...logForm, goalId: e.target.value })}
+                  className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink"
+                >
+                  <option value="">No goal</option>
+                  {state.goals.filter((g) => g.status === 'active').map((g) => (
+                    <option key={g.id} value={g.id}>{g.title}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Date</Label>
+                <Input
+                  type="date"
+                  value={logForm.date}
+                  max={todayString()}
+                  onChange={(e) => setLogForm({ ...logForm, date: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Roadmap (optional)</Label>
+                <select
+                  value={logForm.roadmapId}
+                  onChange={(e) => setLogForm({ ...logForm, roadmapId: e.target.value, stepId: '', markStepComplete: false })}
+                  className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink"
+                >
+                  <option value="">No roadmap</option>
+                  {state.roadmaps.map((r) => (
+                    <option key={r.id} value={r.id}>{r.title}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Roadmap step</Label>
+                <select
+                  value={logForm.stepId}
+                  disabled={!logForm.roadmapId}
+                  onChange={(e) => setLogForm({ ...logForm, stepId: e.target.value, markStepComplete: false })}
+                  className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink disabled:opacity-50"
+                >
+                  <option value="">{logForm.roadmapId ? 'Pick a step (optional)' : 'Pick a roadmap first'}</option>
+                  {selectedSteps.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title}{s.status === 'completed' ? ' (done)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {logForm.stepId && !editingSession && (
+              <label className="flex cursor-pointer items-start gap-2 text-sm text-ink-secondary">
+                <input
+                  type="checkbox"
+                  checked={logForm.markStepComplete}
+                  onChange={(e) => setLogForm({ ...logForm, markStepComplete: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 accent-indigo-600"
+                />
+                <span>Mark this roadmap step as completed <span className="text-ink-muted">(otherwise it moves to In Progress)</span></span>
+              </label>
+            )}
             <div>
-              <Label>Minutes</Label>
+              <Label>Time spent (minutes)</Label>
               <Input
                 type="number"
                 min={1}
                 max={1440}
-                value={sessionMinutes}
-                onChange={(e) => setSessionMinutes(e.target.value)}
+                placeholder="45"
+                value={logForm.minutes}
+                onChange={(e) => setLogForm({ ...logForm, minutes: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>What I understood</Label>
+              <Textarea
+                rows={2}
+                placeholder="e.g. Can create basic position and scale animations"
+                value={logForm.understood}
+                onChange={(e) => setLogForm({ ...logForm, understood: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>What I struggled with</Label>
+              <Textarea
+                rows={2}
+                placeholder="e.g. Easing curves still feel confusing"
+                value={logForm.struggled}
+                onChange={(e) => setLogForm({ ...logForm, struggled: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>What I want to learn next</Label>
+              <Textarea
+                rows={2}
+                placeholder="e.g. Practice graph editor on a bouncing ball"
+                value={logForm.next}
+                onChange={(e) => setLogForm({ ...logForm, next: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Optional notes</Label>
+              <Textarea
+                rows={2}
+                placeholder="Links, ideas, reminders…"
+                value={logForm.notes}
+                onChange={(e) => setLogForm({ ...logForm, notes: e.target.value })}
               />
             </div>
             <p className="text-xs text-ink-muted">
-              This session counts toward {sessionGoal.title} and updates its progress.
+              Saving logs the session, updates the linked goal, advances the roadmap step, and counts toward today + streak.
             </p>
             <div className="flex gap-2 pt-1">
-              <Button type="submit" className="flex-1">
-                <IconFlame className="h-4 w-4" /> Log session
+              <Button type="submit" className="flex-1" disabled={!logValid}>
+                <IconFlame className="h-4 w-4" /> {editingSession ? 'Save changes' : 'Save learning'}
               </Button>
-              <Button variant="secondary" onClick={() => setSessionGoal(null)}>
+              <Button variant="secondary" onClick={() => { setLogOpen(false); setEditingSession(null); }}>
                 Cancel
               </Button>
             </div>

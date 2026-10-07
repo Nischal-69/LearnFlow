@@ -14,6 +14,8 @@ const KIND_LABEL: Record<CompletionKind, string> = {
 
 export default function Streaks({ api }: { api: LearnFlowApi }) {
   const { state, streak, deleteCompletion } = api;
+  const goalById = new Map(state.goals.map((g) => [g.id, g.title]));
+  const roadmapById = new Map(state.roadmaps.map((r) => [r.id, r]));
   const today = todayString();
   const week = last7Days();
   const counts = week.map((d) => state.completions.filter((c) => c.date === d).length);
@@ -106,16 +108,40 @@ export default function Streaks({ api }: { api: LearnFlowApi }) {
               <div key={date}>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">{formatDate(date)}</p>
                 <div className="space-y-2">
-                  {groups.get(date)!.map((c) => (
-                    <div key={c.id} className="flex items-center gap-3 rounded-lg border border-line px-3 py-2.5">
-                      <Badge tone={c.kind === 'session' ? 'primary' : 'success'}>{KIND_LABEL[c.kind]}</Badge>
-                      <p className="min-w-0 flex-1 truncate text-sm text-ink">{c.title}</p>
-                      {c.minutes > 0 && <span className="shrink-0 text-xs text-ink-muted">{c.minutes} min</span>}
-                      <button onClick={() => deleteCompletion(c.id)} className="rounded-md p-1.5 text-sm text-slate-400 hover:bg-red-50 hover:text-danger" aria-label="Delete entry">
-                        ×
-                      </button>
-                    </div>
-                  ))}
+                  {groups.get(date)!.map((c) => {
+                    const goalTitle = c.goalId ? goalById.get(c.goalId) : undefined;
+                    const roadmap = c.roadmapId ? roadmapById.get(c.roadmapId) : undefined;
+                    const stepTitle = roadmap?.steps.find((s) => s.id === c.roadmapStepId)?.title;
+                    const hasReflection =
+                      c.kind === 'session' && (c.understood || c.struggled || c.next || c.notes);
+                    return (
+                      <div key={c.id} className="rounded-lg border border-line px-3 py-2.5">
+                        <div className="flex items-center gap-3">
+                          <Badge tone={c.kind === 'session' ? 'primary' : 'success'}>{KIND_LABEL[c.kind]}</Badge>
+                          <p className="min-w-0 flex-1 truncate text-sm text-ink">{c.title}</p>
+                          {c.minutes > 0 && <span className="shrink-0 text-xs text-ink-muted">{c.minutes} min</span>}
+                          <button onClick={() => deleteCompletion(c.id)} className="rounded-md p-1.5 text-sm text-slate-400 hover:bg-red-50 hover:text-danger" aria-label="Delete entry">
+                            ×
+                          </button>
+                        </div>
+                        {(goalTitle || (roadmap && stepTitle)) && (
+                          <p className="mt-1 truncate text-xs text-ink-muted">
+                            {[goalTitle, roadmap && stepTitle ? `${roadmap.title} — ${stepTitle}` : null]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        )}
+                        {hasReflection && (
+                          <div className="mt-1.5 grid gap-1 border-t border-line pt-1.5 text-xs sm:grid-cols-2">
+                            {c.understood && <p className="text-ink-secondary"><span className="font-medium text-ink-muted">Understood: </span>{c.understood}</p>}
+                            {c.struggled && <p className="text-ink-secondary"><span className="font-medium text-ink-muted">Struggled: </span>{c.struggled}</p>}
+                            {c.next && <p className="text-ink-secondary"><span className="font-medium text-ink-muted">Next: </span>{c.next}</p>}
+                            {c.notes && <p className="text-ink-secondary"><span className="font-medium text-ink-muted">Notes: </span>{c.notes}</p>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))

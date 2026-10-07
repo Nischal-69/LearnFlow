@@ -182,7 +182,9 @@ export default function Dashboard({
           className="grid gap-3 rounded-xl border border-line bg-card p-4 shadow-card sm:grid-cols-[1fr_120px_auto]"
           onSubmit={(e) => {
             e.preventDefault();
-            logSession(sessionTitle || 'Learning session', Number(minutes) || 0);
+            const mins = Math.max(0, Math.floor(Number(minutes)) || 0);
+            if (mins < 1) return;
+            logSession(sessionTitle || 'Learning session', mins);
             setSessionTitle('');
             setMinutes('25');
             setShowLog(false);

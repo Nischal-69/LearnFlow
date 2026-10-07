@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type {
   CompletionEntry,
+  CompletionKind,
   Goal,
   GoalStatus,
   LearnFlowState,
@@ -57,6 +58,26 @@ function normalizeGoal(raw: Goal): Goal {
     weeklyTargetMinutes: raw.weeklyTargetMinutes ?? 0,
     status,
     completedAt: completed ? (raw.completedAt ?? raw.createdAt) : null,
+  };
+}
+
+/** Fill defaults for history entries saved before the Learning Tracker existed. */
+function normalizeCompletion(raw: CompletionEntry): CompletionEntry {
+  const r = raw as Partial<CompletionEntry>;
+  return {
+    id: r.id ?? uid('log'),
+    date: r.date ?? todayString(),
+    kind: r.kind ?? 'session',
+    title: r.title ?? '',
+    minutes: Math.max(0, Math.floor(r.minutes ?? 0) || 0),
+    goalId: r.goalId ?? null,
+    roadmapId: r.roadmapId ?? null,
+    roadmapStepId: r.roadmapStepId ?? null,
+    understood: r.understood ?? '',
+    struggled: r.struggled ?? '',
+    next: (r as { next?: string }).next ?? '',
+    notes: (r as { notes?: string }).notes ?? '',
+    createdAt: r.createdAt ?? new Date().toISOString(),
   };
 }
 
@@ -150,6 +171,21 @@ export interface RoadmapStepPatch {
 
 export type RoadmapStepSeed = string | { title: string; description?: string; estimatedMinutes?: number };
 
+export interface LearningSessionInput {
+  title: string;
+  minutes: number;
+  date?: string;
+  goalId?: string | null;
+  roadmapId?: string | null;
+  roadmapStepId?: string | null;
+  understood?: string;
+  struggled?: string;
+  next?: string;
+  notes?: string;
+  /** when a roadmap step is linked, also mark it completed */
+  markStepComplete?: boolean;
+}
+
 function makeStep(
   title: string,
   extra?: { description?: string; estimatedMinutes?: number },
@@ -191,14 +227,14 @@ export function roadmapProgress(roadmap: Roadmap): { done: number; total: number
 export function useLearnFlow() {
   const [stored, setStored] = useLocalStorage<LearnFlowState>(STORAGE_KEY, seedState);
 
-  // Migrate tasks/goals/roadmaps saved by older versions to the full shapes.
+  // Migrate tasks/goals/roadmaps/history saved by older versions to the full shapes.
   const state: LearnFlowState = useMemo(
     () => ({
       ...stored,
       tasks: stored.tasks.map(normalizeTask),
       goals: stored.goals.map(normalizeGoal),
       roadmaps: (stored.roadmaps ?? []).map(normalizeRoadmap),
-      completions: stored.completions.map((c) => ({ ...c, goalId: c.goalId ?? null })),
+      completions: (stored.completions ?? []).map(normalizeCompletion),
     }),
     [stored],
   );
@@ -210,19 +246,16 @@ export function useLearnFlow() {
   );
 
   function logCompletion(
-    entry: Omit<CompletionEntry, 'id' | 'createdAt' | 'date' | 'goalId'> & {
-      date?: string;
-      goalId?: string | null;
-    },
+    entry: Partial<CompletionEntry> & { kind: CompletionKind; title: string },
   ) {
-    const full: CompletionEntry = {
+    const full: CompletionEntry = normalizeCompletion({
+      ...entry,
       id: uid('log'),
       date: entry.date ?? todayString(),
-      goalId: null,
       createdAt: new Date().toISOString(),
-      ...entry,
-    } as CompletionEntry;
+    } as CompletionEntry);
     setState((s) => ({ ...s, completions: [full, ...s.completions] }));
+    return full.id;
   }
 
   // ---- Tasks ----
@@ -650,15 +683,97 @@ export function useLearnFlow() {
     setState((s) => ({ ...s, notes: s.notes.filter((n) => n.id !== id) }));
   }
 
-  // ---- Sessions ----
+  // ---- Sessions / Learning Tracker ----
   function logSession(title: string, minutes: number, date?: string, goalId?: string) {
     logCompletion({
       kind: 'session',
       title: title.trim() || 'Learning session',
-      minutes,
+      minutes: Math.max(0, Math.floor(minutes) || 0),
       date,
       goalId: goalId ?? null,
     });
+  }
+
+  /**
+   * Record actual learning. A day only counts via this (or other completions) —
+   * streaks/goals/today-status all derive from saved history, never estimates.
+   * Optionally advances the linked roadmap step: not_started → in_progress
+   * automatically, → completed when markStepComplete is set.
+   */
+  function logLearningSession(input: LearningSessionInput): string | null {
+    const title = input.title.trim();
+    const minutes = Math.max(0, Math.floor(input.minutes) || 0);
+    if (!title || minutes <= 0) return null;
+    const today = todayString();
+    let date = (input.date || today).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = today;
+    if (date > today) date = today;
+
+    const roadmapId = input.roadmapId ?? null;
+    const roadmapStepId = input.roadmapStepId ?? null;
+
+    const id = logCompletion({
+      kind: 'session',
+      title,
+      minutes,
+      date,
+      goalId: input.goalId ?? null,
+      roadmapId,
+      roadmapStepId,
+      understood: (input.understood ?? '').trim(),
+      struggled: (input.struggled ?? '').trim(),
+      next: (input.next ?? '').trim(),
+      notes: (input.notes ?? '').trim(),
+    });
+
+    if (roadmapId && roadmapStepId) {
+      const roadmap = state.roadmaps.find((r) => r.id === roadmapId);
+      const step = roadmap?.steps.map(normalizeRoadmapStep).find((s) => s.id === roadmapStepId);
+      if (step) {
+        if (input.markStepComplete && step.status !== 'completed') {
+          updateRoadmapStep(roadmapId, roadmapStepId, { status: 'completed' });
+        } else if (step.status === 'not_started') {
+          updateRoadmapStep(roadmapId, roadmapStepId, { status: 'in_progress' });
+        }
+      }
+    }
+    return id;
+  }
+
+  function updateLearningSession(
+    id: string,
+    patch: Partial<Omit<LearningSessionInput, 'markStepComplete'>>,
+  ) {
+    setState((s) => ({
+      ...s,
+      completions: s.completions.map((raw) => {
+        const c = normalizeCompletion(raw);
+        if (c.id !== id || c.kind !== 'session') return c;
+        const nextDate = patch.date !== undefined ? patch.date.slice(0, 10) : c.date;
+        return {
+          ...c,
+          ...(patch.title !== undefined ? { title: patch.title.trim() || c.title } : {}),
+          ...(patch.minutes !== undefined
+            ? { minutes: Math.max(1, Math.floor(patch.minutes) || c.minutes) }
+            : {}),
+          ...(patch.date !== undefined
+            ? {
+                date:
+                  /^\d{4}-\d{2}-\d{2}$/.test(nextDate) && nextDate <= todayString()
+                    ? nextDate
+                    : c.date,
+              }
+            : {}),
+          ...(patch.goalId !== undefined ? { goalId: patch.goalId } : {}),
+          ...(patch.roadmapId !== undefined ? { roadmapId: patch.roadmapId } : {}),
+          ...(patch.roadmapStepId !== undefined ? { roadmapStepId: patch.roadmapStepId } : {}),
+          ...(patch.understood !== undefined ? { understood: patch.understood } : {}),
+          ...(patch.struggled !== undefined ? { struggled: patch.struggled } : {}),
+          ...(patch.next !== undefined ? { next: patch.next } : {}),
+          ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+        };
+      }),
+    }));
   }
 
   function deleteCompletion(id: string) {
@@ -700,6 +815,8 @@ export function useLearnFlow() {
     updateNote,
     deleteNote,
     logSession,
+    logLearningSession,
+    updateLearningSession,
     deleteCompletion,
     resetAll,
   };

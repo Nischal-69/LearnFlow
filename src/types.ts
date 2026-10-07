@@ -87,6 +87,14 @@ export interface CompletionEntry {
   minutes: number;
   /** linked goal, if the activity was recorded against one */
   goalId: string | null;
+  /** linked roadmap + step, for learning sessions */
+  roadmapId: string | null;
+  roadmapStepId: string | null;
+  /** reflection captured by the Learning Tracker */
+  understood: string;
+  struggled: string;
+  next: string;
+  notes: string;
   createdAt: string;
 }
 
