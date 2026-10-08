@@ -9,8 +9,8 @@ import {
   shiftMonthKey,
   todayString,
 } from '../utils';
-import { Badge, Card, CardHeader, EmptyState } from './ui';
-import { IconFlame } from './icons';
+import { Badge, Button, Card, CardHeader, EmptyState, IconButton, Select } from './ui';
+import { IconChevronLeft, IconChevronRight, IconClose, IconFlame, IconTrash } from './icons';
 
 const KIND_LABEL: Record<CompletionKind, string> = {
   task: 'Task',
@@ -19,7 +19,7 @@ const KIND_LABEL: Record<CompletionKind, string> = {
   session: 'Session',
 };
 
-const INTENSITY_BG = ['#f1f5f9', '#e0e7ff', '#a5b4fc', '#6366f1', '#4338ca'];
+const INTENSITY_CLASS = ['cal-0', 'cal-1', 'cal-2', 'cal-3', 'cal-4'];
 const INTENSITY_LABEL = ['No learning', '1–29 min', '30–59 min', '60–119 min', '120+ min'];
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -135,24 +135,26 @@ export default function Streaks({ api }: { api: LearnFlowApi }) {
           subtitle="One learning day = at least one completed learning session. Color = minutes logged."
           action={
             <div className="flex shrink-0 items-center gap-1">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => setMonthKey((k) => shiftMonthKey(k, -1))}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-sm text-ink hover:bg-surface"
                 aria-label="Previous month"
               >
-                ‹
-              </button>
+                <IconChevronLeft className="h-4 w-4" />
+              </Button>
               <span className="min-w-[7rem] text-center text-sm font-medium text-ink">
                 {formatMonthKey(monthKey)}
               </span>
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => canGoNext && setMonthKey((k) => shiftMonthKey(k, 1))}
                 disabled={!canGoNext}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-sm text-ink hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Next month"
               >
-                ›
-              </button>
+                <IconChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           }
         />
@@ -183,20 +185,18 @@ export default function Streaks({ api }: { api: LearnFlowApi }) {
                   title={title}
                   aria-label={title}
                   aria-pressed={isSelected}
+                  aria-disabled={isFuture}
+                  disabled={isFuture}
                   onClick={() => setSelectedDate((prev) => (prev === date ? null : date))}
-                  className={`flex aspect-square flex-col items-center justify-center rounded-lg text-xs font-medium transition-transform hover:scale-105 ${
-                    isFuture ? 'cursor-default opacity-40 hover:scale-100' : 'cursor-pointer'
-                  } ${isToday ? 'ring-2 ring-primary-600 ring-offset-1' : ''} ${
-                    isSelected ? 'ring-2 ring-ink ring-offset-1' : ''
-                  }`}
-                  style={{
-                    backgroundColor: INTENSITY_BG[level],
-                    color: level >= 3 ? '#ffffff' : '#0f172a',
-                  }}
+                  className={`flex aspect-square flex-col items-center justify-center rounded-lg text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${INTENSITY_CLASS[level]} ${
+                    level >= 3 ? 'text-white dark:text-slate-900' : 'text-ink'
+                  } ${isFuture ? 'cursor-default opacity-40' : 'cursor-pointer hover:scale-105'} ${
+                    isToday ? 'ring-2 ring-primary-600 ring-offset-1' : ''
+                  } ${isSelected ? 'ring-2 ring-ink ring-offset-1' : ''} disabled:cursor-default`}
                 >
                   <span>{dayNum}</span>
                   {!isFuture && count > 0 && (
-                    <span className={`mt-0.5 text-[10px] leading-none ${level >= 3 ? 'text-indigo-100' : 'text-ink-muted'}`}>
+                    <span className={`mt-0.5 text-[10px] leading-none ${level >= 3 ? 'text-indigo-100 dark:text-slate-700' : 'text-ink-muted'}`}>
                       {minutes}m
                     </span>
                   )}
@@ -214,21 +214,21 @@ export default function Streaks({ api }: { api: LearnFlowApi }) {
                   {' · '}
                   <button
                     onClick={() => setSelectedDate(null)}
-                    className="font-medium text-primary-600 hover:text-primary-700"
+                    className="inline-flex items-center gap-1 font-medium text-primary-600 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
                   >
-                    Clear {formatDate(selectedDate)} filter ×
+                    Clear {formatDate(selectedDate)} filter
+                    <IconClose className="h-3 w-3" />
                   </button>
                 </>
               )}
             </p>
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-ink-muted">Less</span>
-              {INTENSITY_BG.map((bg, level) => (
+              {INTENSITY_CLASS.map((cls, level) => (
                 <span
                   key={level}
                   title={INTENSITY_LABEL[level]}
-                  className="h-4 w-4 rounded"
-                  style={{ backgroundColor: bg, border: '1px solid #e2e8f0' }}
+                  className={`h-4 w-4 rounded border border-line ${cls}`}
                 />
               ))}
               <span className="text-xs text-ink-muted">More</span>
@@ -246,17 +246,18 @@ export default function Streaks({ api }: { api: LearnFlowApi }) {
           title="History"
           subtitle={`${sessionCount} learning sessions · ${state.completions.length} total completions. Streaks use sessions only.`}
           action={
-            <select
+            <Select
               value={kindFilter}
               onChange={(e) => setKindFilter(e.target.value as typeof kindFilter)}
-              className="rounded-lg border border-line bg-white px-2 py-1.5 text-sm text-ink"
+              className="w-auto px-2 py-1.5"
+              aria-label="Filter history by type"
             >
               <option value="all">All types</option>
               <option value="task">Tasks</option>
               <option value="goal">Goals</option>
               <option value="roadmap-step">Roadmap steps</option>
               <option value="session">Sessions</option>
-            </select>
+            </Select>
           }
         />
         <div className="space-y-5 p-4">
@@ -282,9 +283,9 @@ export default function Streaks({ api }: { api: LearnFlowApi }) {
                           <Badge tone={c.kind === 'session' ? 'primary' : 'success'}>{KIND_LABEL[c.kind]}</Badge>
                           <p className="min-w-0 flex-1 truncate text-sm text-ink">{c.title}</p>
                           {c.minutes > 0 && <span className="shrink-0 text-xs text-ink-muted">{c.minutes} min</span>}
-                          <button onClick={() => deleteCompletion(c.id)} className="rounded-md p-1.5 text-sm text-slate-400 hover:bg-red-50 hover:text-danger" aria-label="Delete entry">
-                            ×
-                          </button>
+                          <IconButton tone="danger" onClick={() => deleteCompletion(c.id)} label="Delete entry">
+                            <IconTrash className="h-4 w-4" />
+                          </IconButton>
                         </div>
                         {(goalTitle || (roadmap && stepTitle)) && (
                           <p className="mt-1 truncate text-xs text-ink-muted">

@@ -10,8 +10,9 @@
       // Apply saved appearance before first paint (avoids a light flash in dark mode).
       try {
         var raw = localStorage.getItem('learnflow-state-v1');
-        var theme = (raw && JSON.parse(raw).settings && JSON.parse(raw).settings.theme) || 'system';
-        if (theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+        var parsed = raw ? JSON.parse(raw) : null;
+        var theme = (parsed && parsed.settings && parsed.settings.theme) || 'system';
+        if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
           document.documentElement.classList.add('dark');
         }
       } catch (e) {}

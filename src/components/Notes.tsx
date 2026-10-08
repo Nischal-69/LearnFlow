@@ -3,8 +3,8 @@ import type { LearnFlowApi } from '../store';
 import { normalizeTags } from '../store';
 import { formatDate } from '../utils';
 import { renderMarkdown, stripMarkdown } from '../markdown';
-import { Badge, Button, Card, CardHeader, EmptyState, Input, Label } from './ui';
-import { IconNote, IconPlus, IconTrash } from './icons';
+import { Badge, Button, Card, CardHeader, EmptyState, IconButton, Input, Label, LinkButton } from './ui';
+import { IconNote, IconPlus, IconStar, IconStarFilled, IconTrash } from './icons';
 import NoteEditor from './NoteEditor';
 
 export default function Notes({ api, search }: { api: LearnFlowApi; search: string }) {
@@ -208,7 +208,7 @@ export default function Notes({ api, search }: { api: LearnFlowApi; search: stri
               const step = roadmap?.steps.find((s) => s.id === n.roadmapStepId);
               const preview = stripMarkdown(n.content).slice(0, 160);
               return (
-                <div key={n.id} className={`rounded-lg border p-4 ${n.pinned ? 'border-amber-300 bg-amber-50/40' : 'border-line'}`}>
+                <div key={n.id} className={`rounded-lg border p-4 ${n.pinned ? 'border-warning bg-warning-bg' : 'border-line'}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <IconNote className="h-4 w-4 shrink-0 text-slate-400" />
@@ -219,23 +219,20 @@ export default function Notes({ api, search }: { api: LearnFlowApi; search: stri
                       <Badge tone="neutral">{folder?.name ?? 'Unknown'}</Badge>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
-                      <button
+                      <IconButton
+                        tone="muted"
                         onClick={() => togglePinNote(n.id)}
+                        label={n.pinned ? `Unpin ${n.title}` : `Pin ${n.title}`}
                         title={n.pinned ? 'Unpin' : 'Pin to top'}
-                        aria-label={n.pinned ? `Unpin ${n.title}` : `Pin ${n.title}`}
-                        className={`rounded-md px-2 py-1 text-xs font-medium ${n.pinned ? 'text-amber-600 hover:bg-amber-100' : 'text-ink-muted hover:bg-surface'}`}
                       >
-                        {n.pinned ? '★' : '☆'}
-                      </button>
-                      <button
-                        onClick={() => setOpenId(n.id)}
-                        className="rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50"
-                      >
+                        {n.pinned ? <IconStarFilled className="h-4 w-4 text-warning" /> : <IconStar className="h-4 w-4" />}
+                      </IconButton>
+                      <LinkButton onClick={() => setOpenId(n.id)}>
                         {n.content ? 'Open' : 'Write'}
-                      </button>
-                      <button onClick={() => confirmDelete(n.id, n.title)} className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-danger" aria-label={`Delete ${n.title}`}>
+                      </LinkButton>
+                      <IconButton tone="danger" onClick={() => confirmDelete(n.id, n.title)} label={`Delete ${n.title}`}>
                         <IconTrash />
-                      </button>
+                      </IconButton>
                     </div>
                   </div>
 

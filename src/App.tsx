@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ViewKey } from './types';
 import { useLearnFlow } from './store';
 import { useDismissedReminders } from './data';
@@ -59,7 +59,7 @@ export default function App() {
   }
 
   function openPalette() {
-    setPaletteQuery(search);
+    setPaletteQuery(searchRef.current);
     setPaletteOpen(true);
   }
 
@@ -70,18 +70,22 @@ export default function App() {
   }
 
   // Global search shortcut: Ctrl/Cmd+K opens, Esc closes.
+  // searchRef mirrors the query so the listener subscribes exactly once.
+  const searchRef = useRef(search);
+  searchRef.current = search;
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        openPalette();
+        setPaletteQuery(searchRef.current);
+        setPaletteOpen(true);
       } else if (e.key === 'Escape') {
         setPaletteOpen(false);
       }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [search]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-surface text-ink">

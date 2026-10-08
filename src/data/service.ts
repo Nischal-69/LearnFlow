@@ -296,9 +296,10 @@ export function updateTask(
   let didComplete = false;
   const tasks = state.tasks.map((raw) => {
     if (raw.id !== id) return raw;
+    const current = normalizeTask(raw);
     const next: Task = {
-      ...normalizeTask(raw),
-      ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+      ...current,
+      ...(patch.title !== undefined ? { title: patch.title.trim() || current.title } : {}),
       ...(patch.description !== undefined ? { description: patch.description } : {}),
       ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate || todayString() } : {}),
       ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
@@ -364,9 +365,10 @@ export function updateGoal(
   let didComplete = false;
   const goals = state.goals.map((raw) => {
     if (raw.id !== id) return raw;
+    const current = normalizeGoal(raw);
     const next: Goal = {
-      ...normalizeGoal(raw),
-      ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+      ...current,
+      ...(patch.title !== undefined ? { title: patch.title.trim() || current.title } : {}),
       ...(patch.description !== undefined ? { description: patch.description } : {}),
       ...(patch.motivation !== undefined ? { motivation: patch.motivation.trim() } : {}),
       ...(patch.deadline !== undefined ? { deadline: patch.deadline } : {}),
@@ -663,7 +665,7 @@ export function updateLearningSession(
 }
 
 export function deleteLearningSession(state: LearnFlowState, id: string): LearnFlowState {
-  return { ...state, completions: state.completions.filter((c) => c.id !== id) };
+  return { ...state, completions: state.completions.filter((c) => !(c.id === id && c.kind === 'session')) };
 }
 
 // ============================ Folders ============================
@@ -929,7 +931,11 @@ export function deleteResource(state: LearnFlowState, id: string): LearnFlowStat
 // ============================ Daily Reviews ============================
 
 function isValidDateOnly(v: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = v.split('-').map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
 export function listDailyReviews(state: LearnFlowState): DailyReview[] {
@@ -941,7 +947,7 @@ export function getDailyReview(state: LearnFlowState, date: string): DailyReview
 }
 
 export function createDailyReview(state: LearnFlowState, input: DailyReviewInput): { state: LearnFlowState; ok: boolean } {
-  return { state: saveDailyReview(state, input).state, ok: saveDailyReview(state, input).ok };
+  return saveDailyReview(state, input);
 }
 
 export function saveDailyReview(state: LearnFlowState, input: DailyReviewInput): { state: LearnFlowState; ok: boolean } {

@@ -127,7 +127,11 @@ export function normalizeReview(raw: WeeklyReview): WeeklyReview {
 }
 
 function isValidDateOnly(v: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = v.split('-').map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
 /** Fill defaults for daily reviews saved by older versions (field may be missing). */
@@ -362,7 +366,8 @@ export function normalizeStreakEntry(raw: StreakHistoryEntry): StreakHistoryEntr
  * corrupt folder parenting is repaired, orphan notes are re-homed.
  */
 export function normalizeState(raw: LearnFlowState): LearnFlowState {
-  const folders = (raw.folders ?? []).map(normalizeFolder);
+  const asArray = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  const folders = asArray<Folder>(raw.folders).map(normalizeFolder);
   const folderIds = new Set(folders.map((f) => f.id));
   const parentIds = new Set(folders.filter((f) => f.parentId).map((f) => f.parentId as string));
   const safeFolders = folders.map((f) =>
@@ -372,18 +377,18 @@ export function normalizeState(raw: LearnFlowState): LearnFlowState {
   );
   const validIds = new Set(safeFolders.map((f) => f.id));
   const fallbackId = safeFolders.find((f) => f.parentId === null)?.id ?? safeFolders[0]?.id ?? '';
-  const notes = (raw.notes ?? []).map(normalizeNote).map((n) =>
+  const notes = asArray<Note>(raw.notes).map(normalizeNote).map((n) =>
     validIds.has(n.folderId) ? n : { ...n, folderId: fallbackId },
   );
   return {
-    tasks: (raw.tasks ?? []).map(normalizeTask),
-    goals: (raw.goals ?? []).map(normalizeGoal),
-    roadmaps: (raw.roadmaps ?? []).map(normalizeRoadmap),
+    tasks: asArray<Task>(raw.tasks).map(normalizeTask),
+    goals: asArray<Goal>(raw.goals).map(normalizeGoal),
+    roadmaps: asArray<Roadmap>(raw.roadmaps).map(normalizeRoadmap),
     folders: safeFolders,
     notes,
-    completions: (raw.completions ?? []).map(normalizeCompletion),
-    weeklyReviews: (raw.weeklyReviews ?? []).map(normalizeReview),
-    dailyReviews: (raw.dailyReviews ?? []).map(normalizeDailyReview),
+    completions: asArray<CompletionEntry>(raw.completions).map(normalizeCompletion),
+    weeklyReviews: asArray<WeeklyReview>(raw.weeklyReviews).map(normalizeReview),
+    dailyReviews: asArray<DailyReview>(raw.dailyReviews).map(normalizeDailyReview),
     user: normalizeUser((raw as Partial<LearnFlowState>).user),
     resources: Array.isArray((raw as Partial<LearnFlowState>).resources)
       ? ((raw as Partial<LearnFlowState>).resources as Resource[]).map(normalizeResource)
@@ -398,5 +403,23 @@ export function normalizeState(raw: LearnFlowState): LearnFlowState {
 /** Upgrade any stored payload (v1 without new fields, or corrupt) to v2. */
 export function migrateStoredState(raw: unknown): LearnFlowState {
   if (!raw || typeof raw !== 'object') return seedState();
-  return normalizeState({ ...(seedState() as object), ...(raw as object) } as LearnFlowState);
+  const seed = seedState();
+  // Present-but-wrong-typed collections (e.g. tasks: "nope" from a corrupt
+  // write) must not wipe their seed defaults — drop them so the seed applies.
+  const cleaned: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  for (const key of [
+    'tasks',
+    'goals',
+    'roadmaps',
+    'folders',
+    'notes',
+    'completions',
+    'weeklyReviews',
+    'dailyReviews',
+    'resources',
+    'streakHistory',
+  ]) {
+    if (cleaned[key] !== undefined && !Array.isArray(cleaned[key])) delete cleaned[key];
+  }
+  return normalizeState({ ...(seed as object), ...cleaned } as unknown as LearnFlowState);
 }

@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { LearnFlowState } from '../types';
 import { computeLearningStreak } from '../utils';
-import { KEYS, loadJSON, saveJSON } from './storage';
+import { KEYS, loadJSON, removeKey, saveJSON } from './storage';
 import { migrateStoredState, normalizeSettings, normalizeUser, seedState } from './schema';
 import {
   createDailyReview as svcCreateDailyReview,
@@ -479,6 +479,10 @@ export function useLearnFlowData() {
   }
 
   function resetAll() {
+    // Drop legacy standalone keys too, or the initializer would re-adopt
+    // stale reminder prefs on the next reload (reset resurrection).
+    removeKey(KEYS.REMINDER_PREFS);
+    removeKey(KEYS.REMINDER_DISMISSED);
     setState(seedState());
   }
 

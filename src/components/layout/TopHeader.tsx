@@ -106,7 +106,7 @@ export default function TopHeader({
             {hasDot && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary-600" />}
           </button>
           {notifOpen && (
-            <div className="absolute right-0 mt-2 max-h-96 w-80 overflow-y-auto rounded-xl border border-line bg-card p-2 shadow-lg">
+            <div className="absolute right-0 mt-2 max-h-96 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-card p-2 shadow-lg">
               {reminders.length > 0 ? (
                 <>
                   <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
@@ -119,7 +119,7 @@ export default function TopHeader({
                         if (r.go) onNavigate(r.go);
                         setNotifOpen(false);
                       }}
-                      className="w-full rounded-lg bg-surface px-2 py-1.5 text-left hover:bg-slate-100"
+                      className="w-full rounded-lg bg-surface px-2 py-1.5 text-left hover:bg-line"
                     >
                       <p className="text-sm text-ink">{r.message}</p>
                       {r.detail && <p className="truncate text-[11px] text-ink-muted">{r.detail}</p>}

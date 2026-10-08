@@ -5,16 +5,14 @@ import Reminders from './Reminders';
 import { currentRoadmapStep, nextRoadmapStep } from '../store';
 import type { ViewKey } from '../types';
 import { formatDate, goalStats, todayString } from '../utils';
-import { Badge, Button, Card, CardHeader, EmptyState, IconButton, Input, Label, LinkButton, ProgressBar, Textarea } from './ui';
+import { Badge, Button, Card, CardHeader, EmptyState, Input, Label, LinkButton, ProgressBar, Textarea } from './ui';
 import {
   IconBook,
   IconCheckCircle,
-  IconCircle,
   IconFlame,
   IconFolder,
   IconMap,
   IconNote,
-  IconStarFilled,
   IconTrash,
 } from './icons';
 

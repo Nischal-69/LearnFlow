@@ -21,6 +21,8 @@ function displayUrl(url: string): string {
   const v = url.trim();
   if (/^https?:\/\//i.test(v)) return v;
   if (/^www\./i.test(v)) return `https://${v}`;
+  // Bare domains (example.com/page) would resolve as in-app routes — treat as https.
+  if (/^[^\s]+\.[^\s]{2,}(\/\S*)?$/.test(v)) return `https://${v}`;
   return v;
 }
 

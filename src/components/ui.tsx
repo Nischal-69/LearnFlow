@@ -88,12 +88,14 @@ export function IconButton({
   children,
   onClick,
   label,
+  title,
   tone = 'danger',
   className = '',
 }: {
   children: ReactNode;
   onClick?: () => void;
   label: string;
+  title?: string;
   tone?: 'danger' | 'muted';
   className?: string;
 }) {
@@ -106,6 +108,7 @@ export function IconButton({
       type="button"
       onClick={onClick}
       aria-label={label}
+      title={title ?? label}
       className={`rounded-md p-1.5 transition-colors ${styles} ${FOCUS_RING} ${className}`}
     >
       {children}
