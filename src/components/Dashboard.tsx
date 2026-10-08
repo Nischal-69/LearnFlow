@@ -5,14 +5,16 @@ import Reminders from './Reminders';
 import { currentRoadmapStep, nextRoadmapStep } from '../store';
 import type { ViewKey } from '../types';
 import { formatDate, goalStats, todayString } from '../utils';
-import { Badge, Button, Card, CardHeader, EmptyState, Input, Label, ProgressBar, Textarea } from './ui';
+import { Badge, Button, Card, CardHeader, EmptyState, IconButton, Input, Label, LinkButton, ProgressBar, Textarea } from './ui';
 import {
   IconBook,
   IconCheckCircle,
+  IconCircle,
   IconFlame,
   IconFolder,
   IconMap,
   IconNote,
+  IconStarFilled,
   IconTrash,
 } from './icons';
 
@@ -29,9 +31,9 @@ function SectionTitle({ title, action }: { title: string; action?: React.ReactNo
 
 function ViewAll({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="text-xs font-medium text-primary-600 hover:text-primary-700">
+    <LinkButton onClick={onClick}>
       View all
-    </button>
+    </LinkButton>
   );
 }
 
@@ -279,7 +281,7 @@ export default function Dashboard({
             value={minutes}
             onChange={(e) => setMinutes(e.target.value)}
           />
-          <Button type="submit">Save</Button>
+          <Button type="submit" disabled={Math.max(0, Math.floor(Number(minutes)) || 0) < 1}>Save</Button>
         </form>
       )}
 
@@ -314,7 +316,12 @@ export default function Dashboard({
         />
         <div className="space-y-2 p-4">
           {pendingTasks.length === 0 && completedToday.length === 0 ? (
-            <EmptyState title="Nothing due today" hint="Add a task to plan your next learning step." />
+            <EmptyState
+              title="Nothing due today"
+              hint="Add a task to plan your next learning step."
+              icon={<IconCheckCircle className="h-5 w-5" />}
+              action={<Button size="sm" onClick={() => go('tasks')}>Create your first task</Button>}
+            />
           ) : (
             <>
               {pendingTasks.map((t) => (
@@ -325,15 +332,14 @@ export default function Dashboard({
                     onChange={() => toggleTask(t.id)}
                     className="h-4 w-4 rounded border-slate-300 accent-indigo-600"
                   />
-                  <span className="flex-1 text-sm text-ink">{t.title}</span>
+                  <span className="flex-1 truncate text-sm text-ink" title={t.title}>{t.title}</span>
                   <span className="text-xs text-ink-muted">{formatDate(t.dueDate)}</span>
                 </label>
               ))}
               {completedToday.map((t) => (
                 <div key={t.id} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2.5">
                   <IconCheckCircle className="h-4 w-4 shrink-0 text-success" />
-                  <span className="flex-1 text-sm text-ink-muted line-through">{t.title}</span>
-                  <Badge tone="success">Done</Badge>
+                  <span className="flex-1 truncate text-sm text-ink-muted line-through" title={t.title}>{t.title}</span>
                 </div>
               ))}
             </>
