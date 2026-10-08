@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { LearnFlowApi } from '../store';
+import type { LearnFlowState } from '../types';
 import { KEYS } from '../data/storage';
-import { Button, Card, CardHeader, Input, Label } from './ui';
+import { downloadBackup, hasExistingData, parseBackup } from '../data/backup';
+import { Button, Card, CardHeader, Input, Label, Modal } from './ui';
 
 function Toggle({
   checked,
@@ -31,7 +33,7 @@ function Toggle({
 }
 
 export default function Settings({ api }: { api: LearnFlowApi }) {
-  const { state, streak, resetAll, updateUserName, updateReminderPrefs, updateSettings } = api;
+  const { state, streak, resetAll, replaceAll, updateUserName, updateReminderPrefs, updateSettings } = api;
   const prefs = state.settings.reminders;
   const [nameDraft, setNameDraft] = useState(state.user.name);
   const [savedTick, setSavedTick] = useState(false);
@@ -42,6 +44,50 @@ export default function Settings({ api }: { api: LearnFlowApi }) {
     updateUserName(trimmed);
     setSavedTick(true);
     window.setTimeout(() => setSavedTick(false), 1500);
+  }
+
+  type ConfirmState =
+    | { kind: 'clear' }
+    | { kind: 'import'; fileName: string; parsed: LearnFlowState };
+
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [backupStatus, setBackupStatus] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function describeBackup(s: LearnFlowState): string {
+    const parts: string[] = [];
+    if (s.tasks.length > 0) parts.push(`${s.tasks.length} task${s.tasks.length === 1 ? '' : 's'}`);
+    if (s.goals.length > 0) parts.push(`${s.goals.length} goal${s.goals.length === 1 ? '' : 's'}`);
+    if (s.notes.length > 0) parts.push(`${s.notes.length} note${s.notes.length === 1 ? '' : 's'}`);
+    if (s.roadmaps.length > 0)
+      parts.push(`${s.roadmaps.length} roadmap${s.roadmaps.length === 1 ? '' : 's'}`);
+    return parts.length > 0 ? parts.join(', ') : 'no items';
+  }
+
+  async function onImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBackupStatus(null);
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setBackupStatus({ tone: 'error', text: 'Could not read that file. Please try again.' });
+      return;
+    }
+    const result = parseBackup(text);
+    if (!result.ok) {
+      setBackupStatus({ tone: 'error', text: result.error });
+      return;
+    }
+    if (hasExistingData(state)) {
+      // Never overwrite without explicit confirmation.
+      setConfirm({ kind: 'import', fileName: file.name, parsed: result.state });
+    } else {
+      replaceAll(result.state);
+      setBackupStatus({ tone: 'ok', text: 'Backup imported successfully.' });
+    }
   }
 
   return (
@@ -143,26 +189,101 @@ export default function Settings({ api }: { api: LearnFlowApi }) {
       </Card>
 
       <Card>
-        <CardHeader title="Data" subtitle="Stored locally in your browser (v1)." />
-        <div className="p-4">
+        <CardHeader title="Data" subtitle="Backup, restore, or clear your data." />
+        <div className="space-y-3 p-4">
+          <p className="text-sm text-ink-secondary">Your data is stored locally in this browser.</p>
           <p className="text-sm text-ink-secondary">
             LearnFlow saves tasks, goals, roadmaps, folders, notes, resources, sessions, reviews,
             streak history, user and settings under the key{' '}
             <code className="rounded bg-surface px-1 text-xs">{KEYS.STATE}</code>. Refreshing never
             deletes it. Clearing your browser data will remove it.
           </p>
-          <div className="mt-3">
-            <Button
-              variant="danger"
-              onClick={() => {
-                if (window.confirm('Delete all LearnFlow data?')) resetAll();
-              }}
+          {backupStatus && (
+            <p
+              role={backupStatus.tone === 'error' ? 'alert' : 'status'}
+              className={`rounded-lg px-3 py-2 text-sm ${
+                backupStatus.tone === 'error'
+                  ? 'bg-danger-bg text-danger'
+                  : 'bg-success-bg text-success'
+              }`}
             >
-              Reset all data
+              {backupStatus.text}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => downloadBackup(state)}>
+              Export as JSON
+            </Button>
+            <Button variant="secondary" onClick={() => fileRef.current?.click()}>
+              Import JSON
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              aria-label="Choose a LearnFlow backup file to import"
+              onChange={onImportFile}
+            />
+            <Button variant="danger" onClick={() => setConfirm({ kind: 'clear' })}>
+              Clear all local data
             </Button>
           </div>
         </div>
       </Card>
+
+      {confirm?.kind === 'clear' && (
+        <Modal title="Clear all local data?" onClose={() => setConfirm(null)}>
+          <p className="text-sm text-ink-secondary">
+            This permanently deletes everything stored in this browser — tasks, goals, roadmaps,
+            notes, sessions, reviews and settings. This cannot be undone.
+          </p>
+          <p className="mt-2 text-sm text-ink-secondary">
+            Tip: export a JSON backup first so you can restore later.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <Button variant="secondary" onClick={() => setConfirm(null)} className="flex-1">
+              Keep my data
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1"
+              onClick={() => {
+                resetAll();
+                setConfirm(null);
+                setBackupStatus({ tone: 'ok', text: 'All local data was cleared.' });
+              }}
+            >
+              Yes, delete everything
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      {confirm?.kind === 'import' && (
+        <Modal title="Replace existing data?" onClose={() => setConfirm(null)}>
+          <p className="text-sm text-ink-secondary">
+            The backup <span className="font-medium text-ink">“{confirm.fileName}”</span> contains{' '}
+            {describeBackup(confirm.parsed)}. Importing will replace everything currently stored in
+            this browser. This cannot be undone.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <Button variant="secondary" onClick={() => setConfirm(null)} className="flex-1">
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => {
+                replaceAll(confirm.parsed);
+                setConfirm(null);
+                setBackupStatus({ tone: 'ok', text: 'Backup imported successfully.' });
+              }}
+            >
+              Replace my data
+            </Button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

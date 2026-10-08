@@ -473,6 +473,11 @@ export function useLearnFlowData() {
     setState(seedState());
   }
 
+  /** Replace the entire dataset (used by validated backup import). */
+  function replaceAll(next: LearnFlowState) {
+    setState(migrateStoredState(next));
+  }
+
   return {
     state,
     streak,
@@ -547,6 +552,7 @@ export function useLearnFlowData() {
     listStreakHistory: () => listStreakHistory(state),
     deleteStreakHistory: (date: string) => setState((s) => svcDeleteStreakHistory(s, date)),
     resetAll,
+    replaceAll,
     // re-exported for advanced use
     _setState: setState,
   };
