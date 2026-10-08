@@ -44,12 +44,12 @@ interface FormState {
   status: TaskStatus;
 }
 
-function blankForm(): FormState {
+function blankForm(priority: TaskPriority = 'medium'): FormState {
   return {
     title: '',
     description: '',
     dueDate: todayString(),
-    priority: 'medium',
+    priority,
     category: '',
     estimated: '',
     status: 'todo',
@@ -73,7 +73,7 @@ export default function Tasks({ api, search }: { api: LearnFlowApi; search: stri
   const [filter, setFilter] = useState<Filter>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
-  const [form, setForm] = useState<FormState>(blankForm);
+  const [form, setForm] = useState<FormState>(() => blankForm(state.settings.defaultTaskPriority));
   const q = search.trim().toLowerCase();
 
   const categories = Array.from(
@@ -82,7 +82,7 @@ export default function Tasks({ api, search }: { api: LearnFlowApi; search: stri
 
   function openCreate() {
     setEditing(null);
-    setForm(blankForm());
+    setForm(blankForm(state.settings.defaultTaskPriority));
     setModalOpen(true);
   }
 

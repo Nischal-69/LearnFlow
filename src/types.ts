@@ -144,6 +144,10 @@ export interface DailyReview {
 export interface User {
   id: string;
   name: string;
+  /** Emoji or image data-URL. '' = fall back to name initial. */
+  avatar: string;
+  /** Free-text answer to “What are you learning?” */
+  learningGoal: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -153,11 +157,16 @@ export interface ReminderPrefs {
   dailyLearning: boolean;
   tasks: boolean;
   roadmaps: boolean;
+  dailyReview: boolean;
 }
 
 /** App-wide settings. Persisted locally for v1; a future backend can store per-user. */
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
+  /** Default minutes of learning per day. 0 = no target. */
+  dailyLearningTargetMinutes: number;
+  /** Pre-selected priority for newly created tasks. */
+  defaultTaskPriority: TaskPriority;
   reminders: ReminderPrefs;
   updatedAt: string;
 }

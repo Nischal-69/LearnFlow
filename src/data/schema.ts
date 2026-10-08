@@ -37,13 +37,15 @@ export const SCHEMA_VERSION = 2;
 
 export function defaultUser(): User {
   const now = new Date().toISOString();
-  return { id: 'user_local', name: 'Learner', createdAt: now, updatedAt: now };
+  return { id: 'user_local', name: 'Learner', avatar: '', learningGoal: '', createdAt: now, updatedAt: now };
 }
 
 export function defaultSettings(): Settings {
   return {
     theme: 'system',
-    reminders: { enabled: true, dailyLearning: true, tasks: true, roadmaps: true },
+    dailyLearningTargetMinutes: 30,
+    defaultTaskPriority: 'medium',
+    reminders: { enabled: true, dailyLearning: true, tasks: true, roadmaps: true, dailyReview: true },
     updatedAt: new Date().toISOString(),
   };
 }
@@ -291,21 +293,33 @@ export function normalizeUser(raw: unknown): User {
   return {
     id: typeof r.id === 'string' && r.id ? r.id : 'user_local',
     name: typeof r.name === 'string' && r.name.trim() ? r.name : 'Learner',
+    avatar: typeof r.avatar === 'string' ? r.avatar.slice(0, 200000) : '',
+    learningGoal: typeof r.learningGoal === 'string' ? r.learningGoal.slice(0, 200) : '',
     createdAt: r.createdAt ?? now,
     updatedAt: r.updatedAt ?? r.createdAt ?? now,
   };
 }
+
+const VALID_PRIORITIES = ['low', 'medium', 'high'] as const;
 
 export function normalizeSettings(raw: unknown): Settings {
   const r = (raw ?? {}) as Partial<Settings> & { reminders?: unknown };
   const rem = (r.reminders ?? {}) as Partial<Settings['reminders']>;
   return {
     theme: r.theme === 'light' || r.theme === 'dark' ? r.theme : 'system',
+    dailyLearningTargetMinutes: Math.max(
+      0,
+      Math.min(1440, Math.floor(Number(r.dailyLearningTargetMinutes) || 0)),
+    ),
+    defaultTaskPriority: (VALID_PRIORITIES as readonly string[]).includes(r.defaultTaskPriority ?? '')
+      ? (r.defaultTaskPriority as Settings['defaultTaskPriority'])
+      : 'medium',
     reminders: {
       enabled: rem.enabled !== false,
       dailyLearning: rem.dailyLearning !== false,
       tasks: rem.tasks !== false,
       roadmaps: rem.roadmaps !== false,
+      dailyReview: rem.dailyReview !== false,
     },
     updatedAt: r.updatedAt ?? new Date().toISOString(),
   };

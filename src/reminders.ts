@@ -7,6 +7,7 @@ export interface ReminderPreferences {
   dailyLearning: boolean;
   tasks: boolean;
   roadmaps: boolean;
+  dailyReview: boolean;
 }
 
 export const REMINDER_PREFS_KEY = 'learnflow-reminder-prefs-v1';
@@ -17,6 +18,7 @@ export const DEFAULT_REMINDER_PREFS: ReminderPreferences = {
   dailyLearning: true,
   tasks: true,
   roadmaps: true,
+  dailyReview: true,
 };
 
 export interface DismissedReminders {
@@ -33,6 +35,7 @@ export function normalizeReminderPrefs(raw: unknown): ReminderPreferences {
     dailyLearning: r.dailyLearning !== false,
     tasks: r.tasks !== false,
     roadmaps: r.roadmaps !== false,
+    dailyReview: r.dailyReview !== false,
   };
 }
 
@@ -52,7 +55,7 @@ export function withDismissed(prev: DismissedReminders, id: string): DismissedRe
   return { date: today, ids: [...base, id] };
 }
 
-export type ReminderKind = 'daily' | 'streak' | 'task' | 'roadmap';
+export type ReminderKind = 'daily' | 'streak' | 'task' | 'roadmap' | 'review';
 
 export interface Reminder {
   id: string;
@@ -93,16 +96,25 @@ export function buildReminders(
 
   // Daily learning reminder.
   if (prefs.dailyLearning && !streak.loggedToday) {
+    const target = state.settings.dailyLearningTargetMinutes;
     const hasActiveGoal = state.goals.some((g) => g.status === 'active');
     if (hasActiveGoal) {
       const oldest = [...state.goals]
         .filter((g) => g.status === 'active')
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      const todayMinutes = state.completions
+        .filter((c) => c.date === today && c.kind === 'session')
+        .reduce((a, c) => a + Math.max(0, c.minutes || 0), 0);
       out.push({
         id: 'daily-today',
         kind: 'daily',
         message: "You haven't logged learning today.",
-        detail: oldest ? `Goal: ${oldest.title}` : undefined,
+        detail:
+          target > 0
+            ? `${todayMinutes}/${target} min today · Goal: ${oldest.title}`
+            : oldest
+              ? `Goal: ${oldest.title}`
+              : undefined,
         go: 'learning',
       });
     } else {
@@ -183,6 +195,17 @@ export function buildReminders(
         });
       }
     }
+  }
+
+  // Daily review reminder — gentle nudge when today has no review yet.
+  if (prefs.dailyReview && !(state.dailyReviews ?? []).some((r) => r.date === today)) {
+    out.push({
+      id: 'review-today',
+      kind: 'review',
+      message: 'Take a moment to review your day.',
+      detail: 'A short reflection keeps the habit going',
+      go: 'dashboard',
+    });
   }
 
   return out.slice(0, 3);

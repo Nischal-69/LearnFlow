@@ -1,35 +1,36 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
         primary: {
-          50: '#eef2ff',
-          100: '#e0e7ff',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
+          50: 'rgb(var(--primary-50) / <alpha-value>)',
+          100: 'rgb(var(--primary-100) / <alpha-value>)',
+          500: 'rgb(var(--primary-500) / <alpha-value>)',
+          600: 'rgb(var(--primary-600) / <alpha-value>)',
+          700: 'rgb(var(--primary-700) / <alpha-value>)',
         },
-        surface: '#f8fafc',
-        card: '#ffffff',
+        surface: 'rgb(var(--surface) / <alpha-value>)',
+        card: 'rgb(var(--card) / <alpha-value>)',
         ink: {
-          DEFAULT: '#0f172a',
-          secondary: '#475569',
-          muted: '#64748b',
+          DEFAULT: 'rgb(var(--ink) / <alpha-value>)',
+          secondary: 'rgb(var(--ink-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--ink-muted) / <alpha-value>)',
         },
-        line: '#e2e8f0',
+        line: 'rgb(var(--line) / <alpha-value>)',
         success: {
-          DEFAULT: '#16a34a',
-          bg: '#dcfce7',
+          DEFAULT: 'rgb(var(--success) / <alpha-value>)',
+          bg: 'rgb(var(--success-bg) / <alpha-value>)',
         },
         warning: {
-          DEFAULT: '#d97706',
-          bg: '#fef3c7',
+          DEFAULT: 'rgb(var(--warning) / <alpha-value>)',
+          bg: 'rgb(var(--warning-bg) / <alpha-value>)',
         },
         danger: {
-          DEFAULT: '#dc2626',
-          bg: '#fee2e2',
+          DEFAULT: 'rgb(var(--danger) / <alpha-value>)',
+          bg: 'rgb(var(--danger-bg) / <alpha-value>)',
         },
       },
       fontFamily: {

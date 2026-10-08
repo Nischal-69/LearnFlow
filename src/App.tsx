@@ -37,6 +37,22 @@ export default function App() {
     [api.state, api.streak, prefs, dismissed],
   );
 
+  // Apply Light / Dark / System appearance to the document root.
+  const theme = api.state.settings.theme;
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const dark = theme === 'dark' || (theme === 'system' && mq.matches);
+      document.documentElement.classList.toggle('dark', dark);
+      document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+    };
+    apply();
+    if (theme === 'system') {
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }
+  }, [theme]);
+
   function navigate(v: ViewKey) {
     setView(v);
     setDrawerOpen(false);

@@ -5,6 +5,7 @@ function kindLabel(kind: Reminder['kind']): string {
   if (kind === 'streak') return 'Streak';
   if (kind === 'daily') return 'Daily';
   if (kind === 'task') return 'Tasks';
+  if (kind === 'review') return 'Review';
   return 'Roadmap';
 }
 

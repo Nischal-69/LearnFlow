@@ -201,17 +201,32 @@ export function createUser(state: LearnFlowState, name: string): { state: LearnF
   const now = new Date().toISOString();
   const trimmed = name.trim() || 'Learner';
   const id = uid('user');
-  return { state: { ...state, user: { id, name: trimmed, createdAt: now, updatedAt: now } }, id };
+  return { state: { ...state, user: { id, name: trimmed, avatar: '', learningGoal: '', createdAt: now, updatedAt: now } }, id };
 }
 
-export function updateUser(state: LearnFlowState, patch: { name?: string }): LearnFlowState {
+export function updateUser(
+  state: LearnFlowState,
+  patch: { name?: string; avatar?: string; learningGoal?: string },
+): LearnFlowState {
   const name = patch.name !== undefined ? patch.name.trim() || state.user.name : state.user.name;
-  return { ...state, user: { ...state.user, name, updatedAt: new Date().toISOString() } };
+  return {
+    ...state,
+    user: {
+      ...state.user,
+      name,
+      ...(patch.avatar !== undefined ? { avatar: patch.avatar.slice(0, 200000) } : {}),
+      ...(patch.learningGoal !== undefined ? { learningGoal: patch.learningGoal.slice(0, 200) } : {}),
+      updatedAt: new Date().toISOString(),
+    },
+  };
 }
 
 export function deleteUser(state: LearnFlowState): LearnFlowState {
   const now = new Date().toISOString();
-  return { ...state, user: { id: 'user_local', name: 'Learner', createdAt: now, updatedAt: now } };
+  return {
+    ...state,
+    user: { id: 'user_local', name: 'Learner', avatar: '', learningGoal: '', createdAt: now, updatedAt: now },
+  };
 }
 
 // ============================ Settings ============================

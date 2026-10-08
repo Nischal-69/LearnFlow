@@ -6,6 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="LearnFlow — Plan it. Learn it. Track it. Build the streak." />
     <title>LearnFlow — Plan it. Learn it. Track it.</title>
+    <script>
+      // Apply saved appearance before first paint (avoids a light flash in dark mode).
+      try {
+        var raw = localStorage.getItem('learnflow-state-v1');
+        var theme = (raw && JSON.parse(raw).settings && JSON.parse(raw).settings.theme) || 'system';
+        if (theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

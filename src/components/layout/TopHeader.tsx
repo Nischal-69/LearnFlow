@@ -160,10 +160,16 @@ export default function TopHeader({
 
         {/* Avatar */}
         <div
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-600 text-sm font-semibold text-white"
-          title="Your profile"
+          className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-primary-600 text-sm font-semibold text-white"
+          title={api.state.user.name || 'Your profile'}
         >
-          L
+          {api.state.user.avatar.startsWith('data:image') ? (
+            <img src={api.state.user.avatar} alt="" className="h-full w-full object-cover" />
+          ) : api.state.user.avatar ? (
+            <span className="text-base leading-none">{api.state.user.avatar}</span>
+          ) : (
+            (api.state.user.name.trim().charAt(0) || 'L').toUpperCase()
+          )}
         </div>
       </div>
 

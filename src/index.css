@@ -4,15 +4,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Semantic theme tokens (RGB channels). Components use bg-surface, bg-card,
+   text-ink, border-line, etc. so Light/Dark/System just swaps these values. */
 :root {
-  --primary: #4f46e5;
-  --background: #f8fafc;
-  --card: #ffffff;
-  --text: #0f172a;
-  --text-secondary: #475569;
-  --border: #e2e8f0;
-  --success: #16a34a;
-  --warning: #d97706;
+  --primary-50: 238 242 255;
+  --primary-100: 224 231 255;
+  --primary-500: 99 102 241;
+  --primary-600: 79 70 229;
+  --primary-700: 67 56 202;
+  --surface: 248 250 252;
+  --card: 255 255 255;
+  --ink: 15 23 42;
+  --ink-secondary: 71 85 105;
+  --ink-muted: 100 116 139;
+  --line: 226 232 240;
+  --success: 22 163 74;
+  --success-bg: 220 252 231;
+  --warning: 217 119 6;
+  --warning-bg: 254 243 199;
+  --danger: 220 38 38;
+  --danger-bg: 254 226 226;
+  color-scheme: light;
+}
+
+html.dark {
+  --primary-50: 30 27 75;
+  --primary-100: 49 46 129;
+  --primary-500: 129 140 248;
+  --primary-600: 129 140 248;
+  --primary-700: 165 180 252;
+  --surface: 2 6 23;
+  --card: 15 23 42;
+  --ink: 226 232 240;
+  --ink-secondary: 148 163 184;
+  --ink-muted: 100 116 139;
+  --line: 30 41 59;
+  --success: 74 222 128;
+  --success-bg: 20 50 30;
+  --warning: 251 191 36;
+  --warning-bg: 69 45 10;
+  --danger: 248 113 113;
+  --danger-bg: 69 20 20;
+  color-scheme: dark;
 }
 
 html {
@@ -20,9 +53,38 @@ html {
 }
 
 body {
-  background-color: var(--background);
-  color: var(--text);
+  background-color: rgb(var(--surface));
+  color: rgb(var(--ink));
   -webkit-font-smoothing: antialiased;
+}
+
+/* Hardcoded light utilities used across components — adapt them in dark mode.
+   Unlayered rules win over Tailwind's layered utilities. */
+html.dark .bg-white {
+  background-color: rgb(var(--card));
+}
+html.dark .bg-slate-100 {
+  background-color: rgb(30 41 59);
+}
+html.dark .bg-slate-200 {
+  background-color: rgb(30 41 59);
+}
+html.dark .text-slate-400 {
+  color: rgb(100 116 139);
+}
+html.dark .text-slate-500 {
+  color: rgb(148 163 184);
+}
+html.dark .border-slate-200,
+html.dark .border-slate-300 {
+  border-color: rgb(51 65 85);
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: rgb(100 116 139);
+}
+html.dark .accent-indigo-600 {
+  accent-color: rgb(129 140 248);
 }
 
 /* Subtle scrollbar */
@@ -33,6 +95,9 @@ body {
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 8px;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
 }
 ::-webkit-scrollbar-track {
   background: transparent;

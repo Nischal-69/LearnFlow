@@ -126,14 +126,19 @@ export function useLearnFlowData() {
     try {
       const legacy = loadJSON<unknown>(KEYS.REMINDER_PREFS, null);
       if (legacy && typeof legacy === 'object') {
-        const l = legacy as Partial<Record<'enabled' | 'dailyLearning' | 'tasks' | 'roadmaps', unknown>>;
+        const l = legacy as Partial<Record<'enabled' | 'dailyLearning' | 'tasks' | 'roadmaps' | 'dailyReview', unknown>>;
         const hasCustom =
-          l.enabled === false || l.dailyLearning === false || l.tasks === false || l.roadmaps === false;
+          l.enabled === false ||
+          l.dailyLearning === false ||
+          l.tasks === false ||
+          l.roadmaps === false ||
+          l.dailyReview === false;
         const isDefault =
           migrated.settings.reminders.enabled &&
           migrated.settings.reminders.dailyLearning &&
           migrated.settings.reminders.tasks &&
-          migrated.settings.reminders.roadmaps;
+          migrated.settings.reminders.roadmaps &&
+          migrated.settings.reminders.dailyReview;
         if (hasCustom && isDefault) {
           return {
             ...migrated,
@@ -144,6 +149,7 @@ export function useLearnFlowData() {
                 dailyLearning: l.dailyLearning !== false,
                 tasks: l.tasks !== false,
                 roadmaps: l.roadmaps !== false,
+                dailyReview: l.dailyReview !== false,
               },
             }),
           };
@@ -447,6 +453,9 @@ export function useLearnFlowData() {
   function updateUserName(name: string) {
     setState((s) => svcUpdateUser(s, { name }));
   }
+  function updateUserProfile(patch: { name?: string; avatar?: string; learningGoal?: string }) {
+    setState((s) => svcUpdateUser(s, patch));
+  }
 
   // ---- Settings ----
   function updateSettings(patch: Partial<import('../types').Settings>) {
@@ -542,6 +551,7 @@ export function useLearnFlowData() {
     listDailyReviews: () => listDailyReviews(state),
     // user
     updateUserName,
+    updateUserProfile,
     createUser: (name: string) => setState((s) => svcCreateUser(s, name).state),
     deleteUser: () => setState((s) => svcDeleteUser(s)),
     // settings
