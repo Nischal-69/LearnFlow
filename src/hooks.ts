@@ -1,22 +1,15 @@
 import { useEffect, useState } from 'react';
+import { loadJSON, saveJSON } from './data/storage';
 
+/**
+ * Persisted React state. Delegates all browser I/O to the centralized
+ * storage adapter — this hook never touches `window.localStorage` directly.
+ */
 export function useLocalStorage<T>(key: string, initialValue: T) {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (raw != null) return JSON.parse(raw) as T;
-    } catch {
-      // ignore corrupt storage
-    }
-    return initialValue;
-  });
+  const [value, setValue] = useState<T>(() => loadJSON<T>(key, initialValue));
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // storage full / unavailable — ignore for v1
-    }
+    saveJSON(key, value);
   }, [key, value]);
 
   return [value, setValue] as const;

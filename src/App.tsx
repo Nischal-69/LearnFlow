@@ -1,18 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ViewKey } from './types';
 import { useLearnFlow } from './store';
-import { useLocalStorage } from './hooks';
-import {
-  DEFAULT_REMINDER_PREFS,
-  EMPTY_DISMISSED,
-  REMINDER_DISMISS_KEY,
-  REMINDER_PREFS_KEY,
-  buildReminders,
-  filterDismissed,
-  normalizeDismissed,
-  normalizeReminderPrefs,
-  withDismissed,
-} from './reminders';
+import { useDismissedReminders } from './data';
+import { buildReminders, filterDismissed } from './reminders';
 import SearchOverlay from './components/SearchOverlay';
 import Dashboard from './components/Dashboard';
 import Tasks from './components/Tasks';
@@ -38,18 +28,14 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
 
-  const [prefsRaw, setPrefsRaw] = useLocalStorage(REMINDER_PREFS_KEY, DEFAULT_REMINDER_PREFS);
-  const [dismissedRaw, setDismissedRaw] = useLocalStorage(REMINDER_DISMISS_KEY, EMPTY_DISMISSED);
-  const prefs = useMemo(() => normalizeReminderPrefs(prefsRaw), [prefsRaw]);
-  const dismissed = useMemo(() => normalizeDismissed(dismissedRaw), [dismissedRaw]);
+  // Centralized data layer owns persistence; App only derives view state.
+  // Reminder prefs live in settings (migrated from the legacy standalone key).
+  const prefs = api.state.settings.reminders;
+  const [dismissed, dismissReminder] = useDismissedReminders();
   const reminders = useMemo(
     () => filterDismissed(buildReminders(api.state, api.streak, prefs), dismissed),
     [api.state, api.streak, prefs, dismissed],
   );
-
-  function dismissReminder(id: string) {
-    setDismissedRaw((prev) => withDismissed(normalizeDismissed(prev), id));
-  }
 
   function navigate(v: ViewKey) {
     setView(v);
@@ -103,7 +89,7 @@ export default function App() {
           {view === 'folders' && <Folders api={api} search={search} />}
           {view === 'notes' && <Notes api={api} search={search} />}
           {view === 'resources' && <Resources api={api} search={search} go={navigate} />}
-          {view === 'settings' && <Settings api={api} prefs={prefs} onPrefs={setPrefsRaw} />}
+          {view === 'settings' && <Settings api={api} />}
         </main>
       </div>
 

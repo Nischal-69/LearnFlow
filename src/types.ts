@@ -141,6 +141,79 @@ export interface DailyReview {
   updatedAt: string;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReminderPrefs {
+  enabled: boolean;
+  dailyLearning: boolean;
+  tasks: boolean;
+  roadmaps: boolean;
+}
+
+/** App-wide settings. Persisted locally for v1; a future backend can store per-user. */
+export interface Settings {
+  theme: 'light' | 'dark' | 'system';
+  reminders: ReminderPrefs;
+  updatedAt: string;
+}
+
+/**
+ * First-class learning resource (bookmark). For v1 it is persisted as its
+ * own collection; the notes-based resource view remains for compatibility.
+ * A future SQL backend maps this 1:1 to a `resources` table.
+ */
+export interface Resource {
+  id: string;
+  title: string;
+  url: string;
+  description: string;
+  folderId: string | null;
+  tags: string[];
+  goalId: string | null;
+  roadmapId: string | null;
+  resourceType: ResourceType;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * A completed learning session. Persisted inside `completions` with
+ * kind === 'session' (single activity-log table). This explicit model is
+ * what a future `learning_sessions` table would store.
+ */
+export interface LearningSession {
+  id: string;
+  /** yyyy-mm-dd in local time */
+  date: string;
+  title: string;
+  minutes: number;
+  goalId: string | null;
+  roadmapId: string | null;
+  roadmapStepId: string | null;
+  understood: string;
+  struggled: string;
+  next: string;
+  notes: string;
+  createdAt: string;
+}
+
+/** Persisted daily snapshot of streak counters (derived from sessions). */
+export interface StreakHistoryEntry {
+  id: string;
+  /** yyyy-mm-dd the snapshot was taken for */
+  date: string;
+  current: number;
+  longest: number;
+  activeDays: number;
+  loggedToday: boolean;
+  createdAt: string;
+}
+
 export interface LearnFlowState {
   tasks: Task[];
   goals: Goal[];
@@ -150,6 +223,12 @@ export interface LearnFlowState {
   completions: CompletionEntry[];
   weeklyReviews: WeeklyReview[];
   dailyReviews: DailyReview[];
+  user: User;
+  /** Standalone resources collection (v2). Seeded empty; notes with URLs stay valid. */
+  resources: Resource[];
+  /** Append-only streak snapshots; streak itself is still derived from sessions. */
+  streakHistory: StreakHistoryEntry[];
+  settings: Settings;
 }
 
 export type ViewKey =
