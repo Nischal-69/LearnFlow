@@ -3,6 +3,7 @@ import { IconBell, IconMenu, IconSearch } from '../icons';
 import { PAGE_META } from './nav';
 import type { ViewKey } from '../../types';
 import type { LearnFlowApi } from '../../store';
+import type { Reminder } from '../../reminders';
 import { formatDate, todayString } from '../../utils';
 
 export default function TopHeader({
@@ -12,6 +13,9 @@ export default function TopHeader({
   onSearch,
   onMenu,
   onOpenSearch,
+  reminders,
+  onDismissReminder,
+  onNavigate,
 }: {
   view: ViewKey;
   api: LearnFlowApi;
@@ -19,6 +23,9 @@ export default function TopHeader({
   onSearch: (v: string) => void;
   onMenu: () => void;
   onOpenSearch: () => void;
+  reminders: Reminder[];
+  onDismissReminder: (id: string) => void;
+  onNavigate: (v: ViewKey) => void;
 }) {
   const meta = PAGE_META[view];
   const [notifOpen, setNotifOpen] = useState(false);
@@ -28,7 +35,7 @@ export default function TopHeader({
   const today = todayString();
   const todaysCount = api.state.completions.filter((c) => c.date === today).length;
   const recent = api.state.completions.slice(0, 5);
-  const hasDot = !api.streak.loggedToday || todaysCount > 0;
+  const hasDot = reminders.length > 0;
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -99,7 +106,30 @@ export default function TopHeader({
             {hasDot && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary-600" />}
           </button>
           {notifOpen && (
-            <div className="absolute right-0 mt-2 w-72 rounded-xl border border-line bg-card p-2 shadow-lg">
+            <div className="absolute right-0 mt-2 max-h-96 w-80 overflow-y-auto rounded-xl border border-line bg-card p-2 shadow-lg">
+              {reminders.length > 0 ? (
+                <>
+                  <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                    Gentle reminders
+                  </p>
+                  {reminders.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => {
+                        if (r.go) onNavigate(r.go);
+                        setNotifOpen(false);
+                      }}
+                      className="w-full rounded-lg bg-surface px-2 py-1.5 text-left hover:bg-slate-100"
+                    >
+                      <p className="text-sm text-ink">{r.message}</p>
+                      {r.detail && <p className="truncate text-[11px] text-ink-muted">{r.detail}</p>}
+                    </button>
+                  ))}
+                  <div className="mx-2 my-2 border-t border-line" />
+                </>
+              ) : (
+                <p className="px-2 py-1 text-xs text-ink-muted">All caught up. Nothing nudging you.</p>
+              )}
               <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 {todaysCount} {todaysCount === 1 ? 'activity' : 'activities'} today
               </p>
@@ -112,6 +142,17 @@ export default function TopHeader({
                     <p className="text-[11px] text-ink-muted">{formatDate(c.date)}</p>
                   </div>
                 ))
+              )}
+              {reminders.length > 0 && (
+                <button
+                  onClick={() => {
+                    reminders.forEach((r) => onDismissReminder(r.id));
+                    setNotifOpen(false);
+                  }}
+                  className="mt-1 w-full rounded-lg px-2 py-1.5 text-center text-xs font-medium text-ink-muted hover:bg-surface hover:text-ink"
+                >
+                  Dismiss reminders until tomorrow
+                </button>
               )}
             </div>
           )}

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { LearnFlowApi } from '../store';
+import type { Reminder } from '../reminders';
+import Reminders from './Reminders';
 import { currentRoadmapStep, nextRoadmapStep } from '../store';
 import type { ViewKey } from '../types';
 import { formatDate, goalStats, todayString } from '../utils';
@@ -37,10 +39,14 @@ export default function Dashboard({
   api,
   go,
   search,
+  reminders,
+  onDismissReminder,
 }: {
   api: LearnFlowApi;
   go: (v: ViewKey) => void;
   search: string;
+  reminders: Reminder[];
+  onDismissReminder: (id: string) => void;
 }) {
   const { state, streak, logSession, toggleTask, toggleRoadmapStep, saveDailyReview, deleteDailyReview } = api;
   const today = todayString();
@@ -244,6 +250,8 @@ export default function Dashboard({
           {streak.loggedToday ? 'Log another session' : 'Log today’s learning'}
         </Button>
       </div>
+
+      <Reminders reminders={reminders} onDismiss={onDismissReminder} go={go} />
 
       {showLog && (
         <form

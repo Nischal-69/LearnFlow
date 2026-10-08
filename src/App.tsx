@@ -1,6 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ViewKey } from './types';
 import { useLearnFlow } from './store';
+import { useLocalStorage } from './hooks';
+import {
+  DEFAULT_REMINDER_PREFS,
+  EMPTY_DISMISSED,
+  REMINDER_DISMISS_KEY,
+  REMINDER_PREFS_KEY,
+  buildReminders,
+  filterDismissed,
+  normalizeDismissed,
+  normalizeReminderPrefs,
+  withDismissed,
+} from './reminders';
 import SearchOverlay from './components/SearchOverlay';
 import Dashboard from './components/Dashboard';
 import Tasks from './components/Tasks';
@@ -25,6 +37,19 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
+
+  const [prefsRaw, setPrefsRaw] = useLocalStorage(REMINDER_PREFS_KEY, DEFAULT_REMINDER_PREFS);
+  const [dismissedRaw, setDismissedRaw] = useLocalStorage(REMINDER_DISMISS_KEY, EMPTY_DISMISSED);
+  const prefs = useMemo(() => normalizeReminderPrefs(prefsRaw), [prefsRaw]);
+  const dismissed = useMemo(() => normalizeDismissed(dismissedRaw), [dismissedRaw]);
+  const reminders = useMemo(
+    () => filterDismissed(buildReminders(api.state, api.streak, prefs), dismissed),
+    [api.state, api.streak, prefs, dismissed],
+  );
+
+  function dismissReminder(id: string) {
+    setDismissedRaw((prev) => withDismissed(normalizeDismissed(prev), id));
+  }
 
   function navigate(v: ViewKey) {
     setView(v);
@@ -65,10 +90,10 @@ export default function App() {
 
       {/* Content column */}
       <div className="flex min-h-screen flex-col md:pl-64">
-        <TopHeader view={view} api={api} search={search} onSearch={setSearch} onMenu={() => setDrawerOpen(true)} onOpenSearch={openPalette} />
+        <TopHeader view={view} api={api} search={search} onSearch={setSearch} onMenu={() => setDrawerOpen(true)} onOpenSearch={openPalette} reminders={reminders} onDismissReminder={dismissReminder} onNavigate={navigate} />
 
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 pb-24 md:pb-10">
-          {view === 'dashboard' && <Dashboard api={api} go={navigate} search={search} />}
+          {view === 'dashboard' && <Dashboard api={api} go={navigate} search={search} reminders={reminders} onDismissReminder={dismissReminder} />}
           {view === 'tasks' && <Tasks api={api} search={search} />}
           {view === 'roadmaps' && <Roadmaps api={api} search={search} />}
           {view === 'learning' && <Learning api={api} search={search} />}
@@ -78,7 +103,7 @@ export default function App() {
           {view === 'folders' && <Folders api={api} search={search} />}
           {view === 'notes' && <Notes api={api} search={search} />}
           {view === 'resources' && <Resources api={api} search={search} go={navigate} />}
-          {view === 'settings' && <Settings api={api} />}
+          {view === 'settings' && <Settings api={api} prefs={prefs} onPrefs={setPrefsRaw} />}
         </main>
       </div>
 

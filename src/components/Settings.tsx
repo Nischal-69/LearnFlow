@@ -1,8 +1,49 @@
+import type { Dispatch, SetStateAction } from 'react';
 import type { LearnFlowApi } from '../store';
+import type { ReminderPreferences } from '../reminders';
+import { REMINDER_PREFS_KEY } from '../reminders';
 import { Button, Card, CardHeader } from './ui';
 
-export default function Settings({ api }: { api: LearnFlowApi }) {
+function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-line px-3 py-2.5">
+      <span>
+        <span className="block text-sm font-medium text-ink">{label}</span>
+        <span className="block text-xs text-ink-muted">{hint}</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 shrink-0 accent-indigo-600"
+      />
+    </label>
+  );
+}
+
+export default function Settings({
+  api,
+  prefs,
+  onPrefs,
+}: {
+  api: LearnFlowApi;
+  prefs: ReminderPreferences;
+  onPrefs: Dispatch<SetStateAction<ReminderPreferences>>;
+}) {
   const { state, streak, resetAll } = api;
+  function set<K extends keyof ReminderPreferences>(key: K, value: ReminderPreferences[K]) {
+    onPrefs((prev) => ({ ...prev, [key]: value }));
+  }
   return (
     <div className="space-y-4">
       <Card>
@@ -31,6 +72,40 @@ export default function Settings({ api }: { api: LearnFlowApi }) {
               <p className="text-xs text-ink-muted">Active days</p>
             </div>
           </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Reminders" subtitle="Gentle in-app hints only — never aggressive." />
+        <div className="space-y-2 p-4">
+          <Toggle
+            checked={prefs.enabled}
+            onChange={(v) => set('enabled', v)}
+            label="Enable reminders"
+            hint="Master switch. Off hides every reminder."
+          />
+          <Toggle
+            checked={prefs.dailyLearning}
+            onChange={(v) => set('dailyLearning', v)}
+            label="Daily learning reminder"
+            hint="You haven't logged learning today."
+          />
+          <Toggle
+            checked={prefs.tasks}
+            onChange={(v) => set('tasks', v)}
+            label="Task reminders"
+            hint="Due today, tomorrow, or overdue — one gentle line."
+          />
+          <Toggle
+            checked={prefs.roadmaps}
+            onChange={(v) => set('roadmaps', v)}
+            label="Roadmap reminders"
+            hint="Nudge toward your current roadmap step."
+          />
+          <p className="pt-1 text-xs text-ink-muted">
+            Stored locally under <code className="rounded bg-surface px-1">{REMINDER_PREFS_KEY}</code>.
+            Dismissed reminders reappear tomorrow if still relevant.
+          </p>
         </div>
       </Card>
 
